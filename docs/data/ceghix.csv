@@ -1,0 +1,7 @@
+# CEGHIX — EEX European Gas Spot Index, CEGH VTP Austria
+# Volumengewichteter Durchschnittspreis der Day-Ahead- und Wochenendkontrakte, EUR/MWh.
+# Quelle: https://www.cegh.at/de/gasboerse/indizes/  (manuell gepflegt)
+# Format: JJJJ-MM-TT;Preis    Dezimaltrennzeichen Komma oder Punkt. Zeilen mit # werden ignoriert.
+2026-08-10;60,765
+2026-08-11;60,746
+2026-08-12;61,372

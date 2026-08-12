@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotpreis-Monitor — Strom (EPEX DE-LU) &amp; Erdgas (CEGH)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--surface-0);
+    color: var(--text-primary);
+  }
+  :root {
+    color-scheme: light;
+    --surface-0:      #f4f3f0;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #eeede9;
+    --border:         #dcdbd5;
+    --border-strong:  #c3c2b7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #7a7975;
+    --series-1:       #2a78d6;
+    --series-2:       #eb6834;
+    --series-3:       #1baf7a;
+    --grid:           #e6e5e0;
+    --warn:           #eda100;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-0:      #121211;
+      --surface-1:      #1a1a19;
+      --surface-2:      #232322;
+      --border:         #333331;
+      --border-strong:  #4a4a47;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8e87;
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --series-3:       #199e70;
+      --grid:           #2b2b29;
+      --warn:           #c98500;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0:      #121211;
+    --surface-1:      #1a1a19;
+    --surface-2:      #232322;
+    --border:         #333331;
+    --border-strong:  #4a4a47;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8e87;
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --series-3:       #199e70;
+    --grid:           #2b2b29;
+    --warn:           #c98500;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+
+  header.page { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { font-size: 21px; line-height: 1.25; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { font-size: 13px; color: var(--text-secondary); margin: 0; max-width: 66ch; line-height: 1.55; }
+  .theme-btn {
+    background: var(--surface-1); border: 1px solid var(--border); color: var(--text-secondary);
+    border-radius: 8px; padding: 7px 11px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .theme-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
+
+  /* energy carrier tabs */
+  .carrier { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+  .carrier button {
+    border: 0; background: transparent; color: var(--text-secondary); font-family: inherit;
+    font-size: 14px; font-weight: 560; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .carrier button:hover { color: var(--text-primary); }
+  .carrier button[aria-selected="true"] { background: var(--surface-1); color: var(--text-primary); font-weight: 660; box-shadow: 0 1px 3px rgba(0,0,0,.10); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-top: 16px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 16px 20px; align-items: flex-end; }
+  .ctl-group { display: flex; flex-direction: column; gap: 6px; }
+  .ctl-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 2px; gap: 2px; }
+  .seg button {
+    border: 0; background: transparent; color: var(--text-secondary); font-size: 13px;
+    padding: 6px 12px; border-radius: 7px; cursor: pointer; font-family: inherit; min-height: 32px;
+  }
+  .seg button:hover { color: var(--text-primary); }
+  .seg button[aria-pressed="true"] { background: var(--surface-1); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  select.pick, .field input, textarea.paste {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary);
+    border-radius: 8px; padding: 8px 10px; font-size: 13.5px; font-family: inherit; width: 100%;
+  }
+  select.pick { min-width: 260px; min-height: 36px; cursor: pointer; }
+  select.pick:focus, .field input:focus, textarea.paste:focus { outline: 2px solid var(--series-1); outline-offset: 1px; border-color: transparent; }
+  textarea.paste { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; resize: vertical; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .tile.lead { border-color: var(--series-3); border-width: 1.5px; }
+  .tile-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+  .tile-value { font-size: 27px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .tile-value.sm { font-size: 20px; }
+  .tile-unit { font-size: 13px; color: var(--text-secondary); font-weight: 400; margin-left: 3px; }
+  .tile-meta { font-size: 12px; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 10px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-secondary); }
+  .legend-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+
+  .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 2px; }
+  .chart-title { font-size: 15px; font-weight: 620; margin: 0; }
+  .chart-note { font-size: 12px; color: var(--text-muted); }
+
+  .plot-holder { position: relative; }
+  svg.plot { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .axis-text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .axis-line { stroke: var(--border-strong); stroke-width: 1; }
+  .crosshair { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; z-index: 5;
+    background: var(--surface-1); border: 1px solid var(--border-strong); border-radius: 9px;
+    padding: 9px 11px; font-size: 12.5px; box-shadow: 0 6px 20px rgba(0,0,0,.16);
+    min-width: 175px; opacity: 0; transition: opacity .1s;
+  }
+  .tooltip-date { font-weight: 640; margin-bottom: 6px; color: var(--text-primary); }
+  .tt-row { display: flex; align-items: center; gap: 7px; margin-top: 3px; color: var(--text-secondary); }
+  .tt-row b { margin-left: auto; color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 620; }
+
+  .status { font-size: 13px; color: var(--text-secondary); padding: 26px 0; text-align: center; line-height: 1.6; }
+
+  .calc { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11.5px; color: var(--text-secondary); font-weight: 560; }
+  .field .hint { font-size: 11px; color: var(--text-muted); }
+
+  .result-box { margin-top: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .result-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 5px 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .result-row.total { border-top: 1px solid var(--border-strong); margin-top: 7px; padding-top: 10px; font-size: 15px; font-weight: 650; color: var(--text-primary); }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  table.data th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 7px 10px; border-bottom: 1px solid var(--border-strong); font-weight: 620; }
+  table.data td { padding: 7px 10px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); }
+  table.data td:first-child { color: var(--text-primary); }
+  table.data th:not(:first-child), table.data td:not(:first-child) { text-align: right; }
+  .table-scroll { max-height: 380px; overflow-y: auto; margin-top: 12px; }
+
+  details.disc { margin-top: 16px; }
+  details.disc > summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); font-weight: 560; padding: 4px 0; }
+  details.disc > summary:hover { color: var(--text-primary); }
+
+  .callout { border-left: 3px solid var(--warn); background: var(--surface-2); border-radius: 0 8px 8px 0; padding: 12px 15px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin-top: 16px; }
+  .callout strong { color: var(--text-primary); }
+  .callout code { background: var(--surface-1); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+  .links { display: flex; flex-direction: column; gap: 9px; margin-top: 10px; }
+  .links a { color: var(--series-1); font-size: 13.5px; }
+  footer.src { margin-top: 24px; font-size: 11.5px; color: var(--text-muted); line-height: 1.7; }
+  footer.src a { color: var(--text-muted); }
+  a { text-underline-offset: 2px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page">
+    <div>
+      <h1>Spotpreis-Monitor</h1>
+      <p class="sub">Börsenpreis-Entwicklung als Tages-, Wochen- und Monatsmittel — Referenzindizes für Spotpreis-Tarife
+        (<em>Strom KMU Spot</em> und <em>Erdgas KMU Spot</em>, Energie Klagenfurt GmbH).</p>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button">Dunkel / Hell</button>
+  </header>
+
+  <div class="carrier" role="tablist" aria-label="Energieträger" id="carrierTabs">
+    <button type="button" role="tab" data-v="strom" aria-selected="true">
+      <span class="dot" style="background:var(--series-1)"></span>Strom — EPEX SPOT DE-LU
+    </button>
+    <button type="button" role="tab" data-v="gas" aria-selected="false">
+      <span class="dot" style="background:var(--series-2)"></span>Erdgas — CEGH VTP Austria
+    </button>
+  </div>
+
+  <!-- ============================= STROM ============================= -->
+  <section id="viewStrom">
+
+    <div class="card">
+      <div class="controls">
+        <div class="ctl-group">
+          <span class="ctl-label" id="lbl-agg">Aggregation</span>
+          <div class="seg" role="group" aria-labelledby="lbl-agg" id="segAgg">
+            <button type="button" data-v="day"   aria-pressed="true">Tag</button>
+            <button type="button" data-v="week"  aria-pressed="false">Woche</button>
+            <button type="button" data-v="month" aria-pressed="false">Monat</button>
+          </div>
+        </div>
+        <div class="ctl-group">
+          <span class="ctl-label" id="lbl-range">Zeitraum</span>
+          <div class="seg" role="group" aria-labelledby="lbl-range" id="segRange">
+            <button type="button" data-v="30"   aria-pressed="false">30 Tage</button>
+            <button type="button" data-v="90"   aria-pressed="true">90 Tage</button>
+            <button type="button" data-v="365"  aria-pressed="false">12 Monate</button>
+            <button type="button" data-v="1095" aria-pressed="false">3 Jahre</button>
+          </div>
+        </div>
+        <div class="ctl-group">
+          <span class="ctl-label" id="lbl-unit">Einheit</span>
+          <div class="seg" role="group" aria-labelledby="lbl-unit" id="segUnit">
+            <button type="button" data-v="mwh" aria-pressed="true">EUR/MWh</button>
+            <button type="button" data-v="ct"  aria-pressed="false">ct/kWh</button>
+          </div>
+        </div>
+        <div class="ctl-group" style="flex:1 1 300px">
+          <label class="ctl-label" for="profSel">Lastprofil — Branche</label>
+          <select class="pick" id="profSel"></select>
+          <span class="hint" id="profDesc" style="font-size:11px;color:var(--text-muted)"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h2 class="chart-title" id="chartTitle">Strom — Tagesmittel</h2>
+        <span class="chart-note" id="chartNote"></span>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="plot-holder" id="plotHolder">
+        <div class="status" id="status">Lade Börsendaten …</div>
+        <svg class="plot" id="plot" style="display:none" role="img" aria-label="Zeitreihe der Strom-Spotpreise"></svg>
+        <div class="tooltip" id="tooltip" role="status"></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>So rechnet die grüne Linie.</strong> Sie wendet die Vertragsformel
+      <code>P<sub>n</sub> = Σ Spot(n)·E(n) / Σ E(n) + HF</code> an — jede Viertelstunde wird mit dem
+      Verbrauch des gewählten Branchenprofils gewichtet. <strong>Die Profile sind Näherungen</strong>,
+      an die Charakteristik der Standardlastprofile angelehnt, aber nicht die amtlichen Koeffizienten.
+      Für verbindliche Zahlen die echten Profile von
+      <a href="https://www.apcs.at/de/clearing/technisches-clearing/lastprofile" target="_blank" rel="noopener">APCS</a>
+      (Österreich) bzw. <a href="https://www.bdew.de/energie/standardlastprofile-strom/" target="_blank" rel="noopener">BDEW</a>
+      (Deutschland) einsetzen — siehe README. Blau (Base) ist der ungewichtete Mittelwert, Orange (Peak) die grobe Obergrenze.
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h2 class="chart-title">Strom — Endkundenpreis-Rechner</h2>
+        <span class="chart-note" id="calcBasis"></span>
+      </div>
+      <div class="calc">
+        <div class="field">
+          <label for="inHF">Handlingfee</label>
+          <input type="number" id="inHF" value="15" step="0.5" min="0" inputmode="decimal">
+          <span class="hint">EUR/MWh — steht im Liefervertrag, nicht im Preisblatt</span>
+        </div>
+        <div class="field">
+          <label for="inHKN">Stromqualität HKN</label>
+          <input type="number" id="inHKN" value="0.82" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">ct/kWh — Preisblatt August 2026</span>
+        </div>
+        <div class="field">
+          <label for="inService">Servicepauschale</label>
+          <input type="number" id="inService" value="3.99" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">EUR/Monat je Zählpunkt</span>
+        </div>
+        <div class="field">
+          <label for="inUse">Jahresverbrauch</label>
+          <input type="number" id="inUse" value="40000" step="1000" min="0" inputmode="numeric">
+          <span class="hint">kWh/Jahr (KMU Spot: max. 100.000)</span>
+        </div>
+      </div>
+      <div class="result-box" id="calcOut"></div>
+    </div>
+
+    <details class="disc">
+      <summary>Strom — Datentabelle anzeigen</summary>
+      <div class="table-scroll"><table class="data" id="dataTable"></table></div>
+    </details>
+
+  </section>
+
+  <!-- ============================= GAS ============================= -->
+  <section id="viewGas" hidden>
+
+    <div class="card">
+      <div class="controls">
+        <div class="ctl-group">
+          <span class="ctl-label" id="lbl-gagg">Aggregation</span>
+          <div class="seg" role="group" aria-labelledby="lbl-gagg" id="segGAgg">
+            <button type="button" data-v="day"   aria-pressed="true">Tag</button>
+            <button type="button" data-v="week"  aria-pressed="false">Woche</button>
+            <button type="button" data-v="month" aria-pressed="false">Monat</button>
+          </div>
+        </div>
+        <div class="ctl-group">
+          <span class="ctl-label" id="lbl-gunit">Einheit</span>
+          <div class="seg" role="group" aria-labelledby="lbl-gunit" id="segGUnit">
+            <button type="button" data-v="mwh" aria-pressed="true">EUR/MWh</button>
+            <button type="button" data-v="ct"  aria-pressed="false">ct/kWh</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tiles" id="gTiles"></div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h2 class="chart-title" id="gChartTitle">Erdgas — CEGHIX Tagesmittel</h2>
+        <span class="chart-note" id="gChartNote"></span>
+      </div>
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:var(--series-2)"></span>CEGHIX — volumengewichteter Day-Ahead-Index</span>
+      </div>
+      <div class="plot-holder" id="gPlotHolder">
+        <div class="status" id="gStatus">Lade Gasdaten …</div>
+        <svg class="plot" id="gPlot" style="display:none" role="img" aria-label="Zeitreihe des CEGHIX"></svg>
+        <div class="tooltip" id="gTooltip" role="status"></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Warum Gas nicht live ist.</strong> Der CEGH betreibt keine offene, frei abrufbare
+      Schnittstelle wie die Strombörse — die Werte lassen sich nicht automatisch nachladen.
+      Diese Seite liest deshalb die Datei <code>data/ceghix.csv</code> aus dem Repository.
+      Trag dort neue Werte ein (eine Zeile pro Tag: <code>JJJJ-MM-TT;Preis</code>) oder füg sie unten
+      direkt ein. Der maßgebliche Index für <em>Erdgas KMU Spot</em> ist der <strong>CEGHIX</strong>,
+      der volumengewichtete Durchschnitt der Day-Ahead- und Wochenendkontrakte.
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h2 class="chart-title">Erdgas — Endkundenpreis-Rechner</h2>
+        <span class="chart-note" id="gCalcBasis"></span>
+      </div>
+      <div class="calc">
+        <div class="field">
+          <label for="gHF">Handlingfee</label>
+          <input type="number" id="gHF" value="15" step="0.5" min="0" inputmode="decimal">
+          <span class="hint">EUR/MWh — laut Energieliefervertrag</span>
+        </div>
+        <div class="field">
+          <label for="gCO2">CO₂-Bepreisung (NEHG)</label>
+          <input type="number" id="gCO2" value="0" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">ct/kWh — wird zusätzlich eingehoben</span>
+        </div>
+        <div class="field">
+          <label for="gService">Servicepauschale</label>
+          <input type="number" id="gService" value="3.99" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">EUR/Monat je Zählpunkt</span>
+        </div>
+        <div class="field">
+          <label for="gUse">Jahresverbrauch</label>
+          <input type="number" id="gUse" value="40000" step="1000" min="0" inputmode="numeric">
+          <span class="hint">kWh/Jahr (KMU Spot: max. 100.000)</span>
+        </div>
+      </div>
+      <div class="result-box" id="gCalcOut"></div>
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <h2 class="chart-title">CEGHIX-Werte nachtragen</h2>
+        <span class="chart-note">wirkt sofort, wird nicht gespeichert</span>
+      </div>
+      <p class="sub" style="margin:8px 0 10px">Eine Zeile je Tag. Erlaubt: <code>2026-08-12;61,372</code> ·
+        <code>12.08.2026 61.372</code> · <code>2026-08-12,61.372</code>. Kopfzeilen werden ignoriert.
+        Dauerhaft wird es, wenn du dieselben Zeilen in <code>data/ceghix.csv</code> committest.</p>
+      <textarea class="paste" id="gPaste" placeholder="2026-08-12;61,372&#10;2026-08-11;60,746&#10;2026-08-10;60,765"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <button class="theme-btn" type="button" id="gApply">Werte übernehmen</button>
+        <button class="theme-btn" type="button" id="gReset">Zurücksetzen</button>
+        <span class="chart-note" id="gPasteMsg" style="align-self:center"></span>
+      </div>
+      <div class="links" style="margin-top:16px">
+        <a href="https://www.cegh.at/de/gasboerse/indizes/" target="_blank" rel="noopener">CEGH Indizes — CEGHIX Tageswerte &amp; Monatsindex →</a>
+        <a href="https://www.cegh.at/de/gasboerse/market-data/" target="_blank" rel="noopener">CEGH Marktdaten (Börse) →</a>
+        <a href="https://www.cegh.at/de/" target="_blank" rel="noopener">CEGH Startseite — aktueller Wert im Header →</a>
+      </div>
+    </div>
+
+    <details class="disc">
+      <summary>Erdgas — Datentabelle anzeigen</summary>
+      <div class="table-scroll"><table class="data" id="gDataTable"></table></div>
+    </details>
+
+  </section>
+
+  <footer class="src">
+    <strong>Strom:</strong> EPEX SPOT DE-LU Day-Ahead über die
+    <a href="https://api.energy-charts.info/" target="_blank" rel="noopener">energy-charts.info API</a>
+    (Fraunhofer ISE, Rohdaten SMARD / Bundesnetzagentur, CC BY 4.0); Fallback
+    <a href="https://api.awattar.de/v1/marketdata" target="_blank" rel="noopener">aWATTar</a>.
+    <strong>Erdgas:</strong> CEGHIX, manuell gepflegt aus <a href="https://www.cegh.at/de/gasboerse/indizes/" target="_blank" rel="noopener">cegh.at</a>.<br>
+    Alle Werte netto — ohne Netzentgelte, Abgaben und USt. Zeitzone Europe/Vienna.
+    Lastprofile sind Näherungen, keine amtlichen SLP-Koeffizienten. Angaben ohne Gewähr;
+    maßgeblich ist die Abrechnung des Lieferanten.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var TZ = "Europe/Vienna";
+
+  /* ================= Lastprofile =================
+     Relative Verbrauchsgewichte je Stunde. Näherungen an die Charakteristik der
+     Standardlastprofile (APCS/BDEW), NICHT die amtlichen Koeffizienten.
+     wd = Werktag Mo–Fr, sa = Samstag, so = Sonn-/Feiertag (Faktor oder eigenes Array). */
+  function flat(v) { var a = []; for (var i = 0; i < 24; i++) a.push(v); return a; }
+
+  var PROFILES = [
+    { id: "base", name: "Base — ungewichtet (Referenz)", desc: "Alle Viertelstunden gleich gewichtet. Der Wert, den Börsencharts zeigen.",
+      wd: flat(1), sa: 1, so: 1 },
+    { id: "peak", name: "Peak — Mo–Fr 08–20 Uhr (Referenz)", desc: "Klassisches Handelsprodukt. Grobe Obergrenze für Tagbetriebe.",
+      wd: [0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0], sa: 0, so: 0 },
+    { id: "G0", name: "G0 — Gewerbe allgemein", desc: "Mischprofil für Gewerbe ohne ausgeprägten Schwerpunkt. Guter Startwert, wenn die Branche unklar ist.",
+      wd: [.35,.35,.35,.35,.35,.35,.5,.7,1,1.15,1.15,1.15,1,1.1,1.1,1.1,1.1,.95,.8,.65,.55,.45,.4,.37], sa: .6, so: .4 },
+    { id: "G1", name: "G1 — Büro, Praxis, Kanzlei, Behörde", desc: "Werktags 08–18 Uhr, Wochenende praktisch aus. Der teuerste Fall: Verbrauch genau in den Hochpreisstunden.",
+      wd: [.15,.15,.15,.15,.15,.15,.15,.5,1.1,1.3,1.3,1.3,1.1,1.25,1.25,1.25,1.25,.9,.5,.25,.15,.15,.15,.15], sa: .2, so: .15 },
+    { id: "G2", name: "G2 — Gastronomie, Hotel, Abendbetrieb", desc: "Schwerpunkt am Abend. Profitiert von günstigeren Nachtstunden.",
+      wd: [.5,.4,.3,.25,.25,.25,.3,.4,.5,.6,.7,.9,1,.9,.7,.7,.8,1,1.3,1.5,1.5,1.3,1,.7], sa: 1.15, so: .9 },
+    { id: "G3", name: "G3 — Durchlaufend: Kühlhaus, Server, Tankstelle", desc: "Rund um die Uhr nahezu konstant. Liegt sehr nah am Base-Preis.",
+      wd: [.95,.95,.95,.95,.95,.95,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,1.05,.98,.98], sa: 1, so: 1 },
+    { id: "G4", name: "G4 — Laden, Friseur, Einzelhandel", desc: "Mo–Sa Ladenöffnungszeiten, Sonntag zu.",
+      wd: [.2,.2,.2,.2,.2,.2,.2,.5,1,1.2,1.2,1.2,1.2,1.1,1.2,1.2,1.2,1.2,.8,.4,.2,.2,.2,.2], sa: .95, so: .15 },
+    { id: "G5", name: "G5 — Bäckerei mit Backstube", desc: "Nacht- und Frühschwerpunkt. Das günstigste gewerbliche Profil am Spotmarkt.",
+      wd: [.6,1.2,1.6,1.8,1.8,1.6,1.4,1.2,1,.9,.8,.7,.6,.5,.45,.4,.4,.4,.35,.3,.3,.3,.35,.45], sa: 1, so: .35 },
+    { id: "G6", name: "G6 — Wochenendbetrieb: Sport, Kino, Freizeit", desc: "Schwerpunkt Sa/So und Abend.",
+      wd: [.3,.3,.3,.3,.3,.3,.3,.3,.5,.6,.6,.6,.7,.8,.8,.8,.8,1,1.2,1.2,1.2,1.2,.8,.5], sa: 1.6, so: 1.5 },
+    { id: "L0", name: "L0 — Landwirtschaft", desc: "Zwei Spitzen: früh und am späten Nachmittag (Melkzeiten).",
+      wd: [.5,.5,.5,.5,.5,.9,1.3,1.2,1,.9,.85,.85,.9,.85,.85,.9,1.1,1.4,1.3,1,.8,.65,.55,.5], sa: 1, so: .95 },
+    { id: "H0", name: "H0 — Haushalt (Vergleich)", desc: "Zum Vergleich: das Profil, mit dem Privattarife gerechnet werden.",
+      wd: [.5,.5,.5,.5,.5,.6,.85,1.1,1,.95,.95,1.05,1.1,1,.9,.9,1,1.2,1.4,1.45,1.35,1.15,.9,.65], sa: 1.05, so: 1.1 }
+  ];
+  var PROF_BY_ID = {};
+  PROFILES.forEach(function (p) { PROF_BY_ID[p.id] = p; });
+
+  function weightFor(prof, h, wd) {
+    var base = prof.wd[h];
+    if (wd >= 1 && wd <= 5) return base;
+    var f = (wd === 6) ? prof.sa : prof.so;
+    if (typeof f === "number") return base * f;
+    return f[h];
+  }
+
+  /* ================= shared date helpers ================= */
+  var partsFmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short"
+  });
+  var WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  var MON = ["Jän","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+
+  function localParts(ms) {
+    var p = partsFmt.formatToParts(new Date(ms)), o = {};
+    for (var i = 0; i < p.length; i++) o[p[i].type] = p[i].value;
+    var hh = o.hour === "24" ? 0 : parseInt(o.hour, 10);
+    return { y: +o.year, m: +o.month, d: +o.day, h: hh, wd: WD[o.weekday], key: o.year + "-" + o.month + "-" + o.day };
+  }
+  function isoWeekKey(y, m, d) {
+    var dt = new Date(Date.UTC(y, m - 1, d));
+    var dn = (dt.getUTCDay() + 6) % 7;
+    dt.setUTCDate(dt.getUTCDate() - dn + 3);
+    var y2 = dt.getUTCFullYear();
+    var jan4 = new Date(Date.UTC(y2, 0, 4));
+    var wk = 1 + Math.round(((dt - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+    return y2 + "-KW" + (wk < 10 ? "0" + wk : wk);
+  }
+  function ymd(dt) {
+    return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  }
+  function bucketOf(p, agg) {
+    if (agg === "day")  return { key: p.key, sort: p.y * 10000 + p.m * 100 + p.d,
+                                 label: String(p.d).padStart(2, "0") + "." + String(p.m).padStart(2, "0") + "." };
+    if (agg === "week") { var k = isoWeekKey(p.y, p.m, p.d);
+                          return { key: k, sort: parseInt(k.replace("-KW", ""), 10), label: k.slice(5) + "/" + String(p.y).slice(2) }; }
+    return { key: p.y + "-" + String(p.m).padStart(2, "0"), sort: p.y * 100 + p.m, label: MON[p.m - 1] + " " + String(p.y).slice(2) };
+  }
+  function nfmt(v, d) { return v.toLocaleString("de-AT", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+  /* ================= generic chart ================= */
+  function drawChart(opts) {
+    // opts: svgEl, tooltipEl, holderEl, series[], fields[{key,color,label}], fmt(v), unitLabel
+    var s = opts.series, svg = opts.svgEl;
+    var W = 900, H = 340, ml = 56, mr = 16, mt = 14, mb = 34;
+    var iw = W - ml - mr, ih = H - mt - mb;
+
+    var vals = [];
+    s.forEach(function (d) { opts.fields.forEach(function (f) { if (d[f.key] !== null && d[f.key] !== undefined) vals.push(d[f.key]); }); });
+    if (!vals.length) return;
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var pad = (hi - lo) * 0.12 || 1;
+    var y0 = lo - pad, y1 = hi + pad;
+
+    var X = function (i) { return s.length === 1 ? ml + iw / 2 : ml + (i / (s.length - 1)) * iw; };
+    var Y = function (v) { return mt + ih - ((v - y0) / (y1 - y0)) * ih; };
+
+    var g = "";
+    for (var t = 0; t <= 5; t++) {
+      var v = y0 + (y1 - y0) * t / 5, yy = Y(v);
+      g += '<line class="grid-line" x1="' + ml + '" y1="' + yy.toFixed(1) + '" x2="' + (W - mr) + '" y2="' + yy.toFixed(1) + '"/>';
+      g += '<text class="axis-text" x="' + (ml - 9) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end">' + opts.fmtAxis(v) + '</text>';
+    }
+    if (y0 < 0 && y1 > 0) g += '<line class="axis-line" x1="' + ml + '" y1="' + Y(0).toFixed(1) + '" x2="' + (W - mr) + '" y2="' + Y(0).toFixed(1) + '"/>';
+
+    var every = Math.max(1, Math.ceil(s.length / 12)), lastI = s.length - 1;
+    var skipNear = lastI % every !== 0 && (lastI % every) < every * 0.6;
+    s.forEach(function (d, i) {
+      var isLast = i === lastI;
+      if (!isLast && i % every !== 0) return;
+      if (!isLast && skipNear && lastI - i < every * 0.6) return;
+      g += '<text class="axis-text" x="' + X(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="' + (isLast && s.length > 1 ? "end" : "middle") + '">' + d.label + '</text>';
+    });
+
+    opts.fields.forEach(function (f) {
+      var dd = "", started = false;
+      s.forEach(function (p, i) {
+        var v = p[f.key];
+        if (v === null || v === undefined) { started = false; return; }
+        dd += (started ? " L" : " M") + X(i).toFixed(1) + " " + Y(v).toFixed(1);
+        started = true;
+      });
+      g += '<path d="' + dd.trim() + '" fill="none" stroke="' + f.color + '" stroke-width="' + (f.emph ? 2.6 : 2) + '" stroke-linejoin="round" stroke-linecap="round"/>';
+    });
+    opts.fields.forEach(function (f) {
+      var v = s[lastI][f.key];
+      if (v === null || v === undefined) return;
+      g += '<circle cx="' + X(lastI).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="4.5" fill="' + f.color + '" stroke="var(--surface-1)" stroke-width="2"/>';
+    });
+
+    g += '<g id="hoverG" style="display:none"><line class="crosshair" y1="' + mt + '" y2="' + (mt + ih) + '"/>';
+    opts.fields.forEach(function (f, k) {
+      g += '<circle class="hv" data-k="' + k + '" r="5.5" fill="' + f.color + '" stroke="var(--surface-1)" stroke-width="2"/>';
+    });
+    g += '</g><rect id="hitRect" x="' + ml + '" y="' + mt + '" width="' + iw + '" height="' + ih + '" fill="transparent" style="cursor:crosshair"/>';
+
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.innerHTML = g;
+
+    var tip = opts.tooltipEl, hoverG = svg.querySelector("#hoverG"), hit = svg.querySelector("#hitRect");
+    var line = hoverG.querySelector("line"), dots = hoverG.querySelectorAll("circle.hv");
+
+    function moveTo(clientX) {
+      var r = svg.getBoundingClientRect();
+      var px = (clientX - r.left) / r.width * W;
+      var i = s.length === 1 ? 0 : Math.round((px - ml) / iw * (s.length - 1));
+      i = Math.max(0, Math.min(lastI, i));
+      var d = s[i];
+      hoverG.style.display = "";
+      line.setAttribute("x1", X(i).toFixed(1)); line.setAttribute("x2", X(i).toFixed(1));
+
+      var html = '<div class="tooltip-date">' + d.key + '</div>', top = null;
+      opts.fields.forEach(function (f, k) {
+        var v = d[f.key], c = dots[k];
+        if (v === null || v === undefined) { c.style.display = "none"; }
+        else {
+          c.style.display = ""; c.setAttribute("cx", X(i).toFixed(1)); c.setAttribute("cy", Y(v).toFixed(1));
+          top = (top === null) ? Y(v) : Math.min(top, Y(v));
+        }
+        html += '<div class="tt-row"><span class="legend-swatch" style="background:' + f.color + '"></span>' +
+                f.label + ' <b>' + opts.fmt(v) + '</b></div>';
+      });
+      html += '<div class="tt-row" style="font-size:11px;color:var(--text-muted);margin-top:5px">' + opts.unitLabel +
+              (d.n ? ' · ' + d.n + ' Intervalle' : '') + '</div>';
+      tip.innerHTML = html; tip.style.opacity = "1";
+
+      var holder = opts.holderEl.getBoundingClientRect();
+      var xPx = (X(i) / W) * r.width + (r.left - holder.left);
+      var yPx = ((top === null ? mt : top) / H) * r.height + (r.top - holder.top);
+      var tw = tip.offsetWidth;
+      tip.style.left = Math.max(0, Math.min(holder.width - tw, xPx - tw / 2)) + "px";
+      tip.style.top = Math.max(0, yPx - tip.offsetHeight - 14) + "px";
+    }
+    hit.addEventListener("mousemove", function (e) { moveTo(e.clientX); });
+    hit.addEventListener("touchmove", function (e) { if (e.touches[0]) moveTo(e.touches[0].clientX); }, { passive: true });
+    hit.addEventListener("touchstart", function (e) { if (e.touches[0]) moveTo(e.touches[0].clientX); }, { passive: true });
+    hit.addEventListener("mouseleave", function () { hoverG.style.display = "none"; tip.style.opacity = "0"; });
+  }
+
+  function tile(label, value, unit, meta, size, lead) {
+    return '<div class="tile' + (lead ? " lead" : "") + '"><div class="tile-label">' +
+      (lead ? '<span class="legend-swatch" style="background:var(--series-3)"></span>' : '') + label + '</div>' +
+      '<div class="tile-value' + (size === "sm" ? " sm" : "") + '">' + value + '<span class="tile-unit">' + unit + '</span></div>' +
+      '<div class="tile-meta">' + (meta || "") + '</div></div>';
+  }
+
+  function wireSeg(id, cb) {
+    var el = document.getElementById(id);
+    el.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      [].forEach.call(el.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      cb(b.getAttribute("data-v"));
+    });
+  }
+
+  /* ================= theme ================= */
+  document.getElementById("themeBtn").addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    var isDark = cur ? cur === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.setAttribute("data-theme", isDark ? "light" : "dark");
+    S.render(); G.render();
+  });
+
+  /* ================= carrier tabs ================= */
+  document.getElementById("carrierTabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    [].forEach.call(this.querySelectorAll("button"), function (x) { x.setAttribute("aria-selected", String(x === b)); });
+    var v = b.getAttribute("data-v");
+    document.getElementById("viewStrom").hidden = v !== "strom";
+    document.getElementById("viewGas").hidden = v !== "gas";
+    if (v === "gas") G.render(); else S.render();
+  });
+
+  /* ============================================================
+     STROM
+     ============================================================ */
+  var S = (function () {
+    var st = { agg: "day", range: 90, unit: "mwh", prof: "G0", raw: null, series: null };
+
+    var sel = document.getElementById("profSel");
+    PROFILES.forEach(function (p) {
+      var o = document.createElement("option");
+      o.value = p.id; o.textContent = p.name; if (p.id === st.prof) o.selected = true;
+      sel.appendChild(o);
+    });
+    function syncDesc() { document.getElementById("profDesc").textContent = PROF_BY_ID[st.prof].desc; }
+    syncDesc();
+    sel.addEventListener("change", function () { st.prof = this.value; syncDesc(); recompute(); });
+
+    wireSeg("segAgg", function (v) { st.agg = v; recompute(); });
+    wireSeg("segRange", function (v) { st.range = parseInt(v, 10); load(); });
+    wireSeg("segUnit", function (v) { st.unit = v; recompute(); });
+    ["inHF", "inHKN", "inService", "inUse"].forEach(function (id) {
+      document.getElementById(id).addEventListener("input", renderCalc);
+    });
+
+    function conv(v) { return st.unit === "ct" ? v / 10 : v; }
+    function unitLabel() { return st.unit === "ct" ? "ct/kWh" : "EUR/MWh"; }
+    function fmt(v, dec) {
+      if (v === null || v === undefined) return "–";
+      return nfmt(conv(v), dec !== undefined ? dec : (st.unit === "ct" ? 2 : 1));
+    }
+
+    function load() {
+      var el = document.getElementById("status");
+      document.getElementById("plot").style.display = "none";
+      el.style.display = "block"; el.textContent = "Lade Börsendaten …";
+
+      var end = new Date(), start = new Date(end.getTime() - (st.range + 2) * 86400000);
+      var url = "https://api.energy-charts.info/price?bzn=DE-LU&start=" + ymd(start) + "&end=" + ymd(end);
+
+      fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (j) {
+          if (!j || !j.unix_seconds || !j.price) throw new Error("Unerwartetes Datenformat");
+          var pts = [];
+          for (var i = 0; i < j.unix_seconds.length; i++) {
+            var v = j.price[i];
+            if (v === null || v === undefined || isNaN(v)) continue;
+            pts.push([j.unix_seconds[i] * 1000, v]);
+          }
+          if (!pts.length) throw new Error("Keine Werte im Zeitraum");
+          st.raw = pts; recompute();
+        })
+        .catch(function (e1) {
+          fetch("https://api.awattar.de/v1/marketdata?start=" + (Date.now() - st.range * 86400000))
+            .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+            .then(function (j) {
+              var pts = (j.data || []).map(function (d) { return [d.start_timestamp, d.marketprice]; });
+              if (!pts.length) throw new Error("leer");
+              st.raw = pts; recompute();
+            })
+            .catch(function () {
+              el.innerHTML = "Strom-Daten konnten nicht geladen werden (" + e1.message + ").<br>" +
+                "Meist blockiert das eine Firewall, oder die Datei wurde offline geöffnet.<br>" +
+                'Preise direkt: <a href="https://www.smard.de/home/marktdaten" target="_blank" rel="noopener">smard.de</a>';
+            });
+        });
+    }
+
+    function recompute() {
+      if (!st.raw) return;
+      var prof = PROF_BY_ID[st.prof], useProf = st.prof !== "base" && st.prof !== "peak";
+      var B = {};
+      for (var i = 0; i < st.raw.length; i++) {
+        var ms = st.raw[i][0], v = st.raw[i][1], p = localParts(ms), b = bucketOf(p, st.agg);
+        var o = B[b.key] || (B[b.key] = { key: b.key, label: b.label, sort: b.sort, sum: 0, n: 0, pk: 0, pkn: 0, wp: 0, w: 0 });
+        o.sum += v; o.n++;
+        if (p.wd >= 1 && p.wd <= 5 && p.h >= 8 && p.h < 20) { o.pk += v; o.pkn++; }
+        if (useProf) { var w = weightFor(prof, p.h, p.wd); o.wp += v * w; o.w += w; }
+      }
+      st.series = Object.keys(B).map(function (k) { return B[k]; })
+        .sort(function (a, b) { return a.sort - b.sort; })
+        .map(function (o) {
+          return { key: o.key, label: o.label, n: o.n,
+                   base: o.n ? o.sum / o.n : null,
+                   peak: o.pkn ? o.pk / o.pkn : null,
+                   prof: (useProf && o.w > 0) ? o.wp / o.w : null };
+        });
+      render();
+    }
+
+    function fields() {
+      var f = [
+        { key: "base", color: "var(--series-1)", label: "Base" },
+        { key: "peak", color: "var(--series-2)", label: "Peak" }
+      ];
+      if (st.prof !== "base" && st.prof !== "peak") {
+        f.push({ key: "prof", color: "var(--series-3)", label: PROF_BY_ID[st.prof].id, emph: true });
+      }
+      return f;
+    }
+
+    function render() {
+      if (!st.series || !st.series.length) return;
+      document.getElementById("status").style.display = "none";
+      document.getElementById("plot").style.display = "block";
+      var aggName = st.agg === "day" ? "Tagesmittel" : st.agg === "week" ? "Wochenmittel" : "Monatsmittel";
+      document.getElementById("chartTitle").textContent = "Strom — " + aggName + " (EPEX SPOT DE-LU)";
+      document.getElementById("chartNote").textContent = st.series.length + " Perioden · " + unitLabel() + " netto";
+
+      var p = PROF_BY_ID[st.prof], useProf = st.prof !== "base" && st.prof !== "peak";
+      var leg = '<span class="legend-item"><span class="legend-swatch" style="background:var(--series-1)"></span>Base — alle Viertelstunden</span>' +
+                '<span class="legend-item"><span class="legend-swatch" style="background:var(--series-2)"></span>Peak — Mo–Fr 08:00–20:00</span>';
+      if (useProf) leg += '<span class="legend-item"><span class="legend-swatch" style="background:var(--series-3)"></span><strong style="color:var(--text-primary)">' + p.name + '</strong> — lastgewichtet</span>';
+      document.getElementById("legend").innerHTML = leg;
+
+      renderTiles(useProf, p);
+      drawChart({
+        svgEl: document.getElementById("plot"), tooltipEl: document.getElementById("tooltip"),
+        holderEl: document.getElementById("plotHolder"), series: st.series, fields: fields(),
+        fmt: function (v) { return fmt(v); }, fmtAxis: function (v) { return fmt(v, st.unit === "ct" ? 1 : 0); },
+        unitLabel: unitLabel()
+      });
+      renderCalc(); renderTable();
+    }
+
+    function renderTiles(useProf, p) {
+      var s = st.series, last = s[s.length - 1], prev = s.length > 1 ? s[s.length - 2] : null;
+      var lbl = st.agg === "day" ? "Letzter Tag" : st.agg === "week" ? "Letzte Woche" : "Letzter Monat";
+      var d = "";
+      if (prev && prev.base) {
+        var pct = (last.base - prev.base) / Math.abs(prev.base) * 100;
+        d = " · " + (pct >= 0 ? "+" : "−") + Math.abs(pct).toFixed(1) + " % ggü. Vorperiode";
+      }
+      var all = s.map(function (x) { return x.base; });
+      var avg = all.reduce(function (a, b) { return a + b; }, 0) / all.length;
+      var min = s.reduce(function (a, b) { return b.base < a.base ? b : a; });
+      var max = s.reduce(function (a, b) { return b.base > a.base ? b : a; });
+
+      var html = "";
+      if (useProf) html += tile("Strom · " + lbl + " · " + p.id, fmt(last.prof), unitLabel(), p.name.split(" — ")[1] || p.name, null, true);
+      html += tile("Strom · " + lbl + " · Base", fmt(last.base), unitLabel(), last.label + d) +
+              tile("Strom · " + lbl + " · Peak", fmt(last.peak), unitLabel(), "Mo–Fr 08–20 Uhr") +
+              tile("Strom · Ø Zeitraum · Base", fmt(avg), unitLabel(), s[0].label + " – " + last.label);
+      if (!useProf) html += tile("Spanne im Zeitraum", fmt(min.base) + "–" + fmt(max.base), unitLabel(), "Tief " + min.label + " · Hoch " + max.label, "sm");
+      document.getElementById("tiles").innerHTML = html;
+    }
+
+    function renderCalc() {
+      if (!st.series || !st.series.length) return;
+      var s = st.series, last = s[s.length - 1];
+      var useProf = st.prof !== "base" && st.prof !== "peak";
+      var p = PROF_BY_ID[st.prof];
+      var spot = useProf && last.prof !== null ? last.prof : (st.prof === "peak" && last.peak !== null ? last.peak : last.base);
+
+      var hf = parseFloat(document.getElementById("inHF").value) || 0;
+      var hkn = parseFloat(document.getElementById("inHKN").value) || 0;
+      var svc = parseFloat(document.getElementById("inService").value) || 0;
+      var use = parseFloat(document.getElementById("inUse").value) || 0;
+
+      var spotCt = spot / 10, hfCt = hf / 10;
+      var ap = spotCt + hfCt, energie = ap + hkn;
+      var kwhM = use / 12, svcCt = kwhM > 0 ? (svc / kwhM) * 100 : 0;
+      var ges = energie + svcCt, monat = (energie / 100) * kwhM + svc;
+
+      var per = st.agg === "day" ? "Tag" : st.agg === "week" ? "Woche" : "Monat";
+      document.getElementById("calcBasis").textContent = per + " " + last.label + " · Profil " + p.id;
+
+      document.getElementById("calcOut").innerHTML =
+        '<div class="result-row"><span>Spotpreis lastgewichtet — <strong style="color:var(--text-primary)">' + p.name + '</strong></span><span>' + nfmt(spotCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row"><span>+ Handlingfee</span><span>' + nfmt(hfCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row" style="color:var(--text-primary)"><span><strong>= Arbeitspreis (Formel P<sub>n</sub>)</strong></span><span><strong>' + nfmt(ap, 3) + ' ct/kWh</strong></span></div>' +
+        '<div class="result-row"><span>+ Stromqualität HKN</span><span>' + nfmt(hkn, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row"><span>+ Servicepauschale umgelegt (' + nfmt(kwhM, 0) + ' kWh/Monat)</span><span>' + nfmt(svcCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row total"><span>Energiekosten gesamt</span><span>' + nfmt(ges, 2) + ' ct/kWh netto</span></div>' +
+        '<div class="result-row"><span>entspricht rund</span><span>' + nfmt(monat, 2) + ' EUR/Monat · ' + nfmt(monat * 12, 0) + ' EUR/Jahr</span></div>' +
+        '<div class="result-row" style="font-size:11.5px;color:var(--text-muted);border-top:1px solid var(--grid);margin-top:6px;padding-top:8px"><span>Ohne Netzentgelte, Elektrizitätsabgabe, Ökostrompauschalen und USt. Lastprofil ist eine Näherung. Richtwert, keine Angebotsgrundlage.</span></div>';
+    }
+
+    function renderTable() {
+      var s = st.series, useProf = st.prof !== "base" && st.prof !== "peak";
+      var h = '<thead><tr><th>Periode</th><th>Base</th><th>Peak</th>' + (useProf ? '<th>' + PROF_BY_ID[st.prof].id + '</th>' : '') + '<th>Intervalle</th></tr></thead><tbody>';
+      for (var i = s.length - 1; i >= 0; i--) {
+        h += '<tr><td>' + s[i].key + '</td><td>' + fmt(s[i].base) + '</td><td>' + fmt(s[i].peak) + '</td>' +
+             (useProf ? '<td>' + fmt(s[i].prof) + '</td>' : '') + '<td>' + s[i].n + '</td></tr>';
+      }
+      document.getElementById("dataTable").innerHTML = h + '</tbody>';
+    }
+
+    load();
+    return { render: function () { if (st.series) render(); } };
+  })();
+
+  /* ============================================================
+     ERDGAS
+     ============================================================ */
+  var G = (function () {
+    var st = { agg: "day", unit: "mwh", raw: null, series: null, source: "" };
+
+    wireSeg("segGAgg", function (v) { st.agg = v; recompute(); });
+    wireSeg("segGUnit", function (v) { st.unit = v; recompute(); });
+    ["gHF", "gCO2", "gService", "gUse"].forEach(function (id) {
+      document.getElementById(id).addEventListener("input", renderCalc);
+    });
+    document.getElementById("gApply").addEventListener("click", function () {
+      var txt = document.getElementById("gPaste").value;
+      var pts = parseCsv(txt);
+      var msg = document.getElementById("gPasteMsg");
+      if (!pts.length) { msg.textContent = "Keine gültigen Zeilen erkannt."; return; }
+      st.raw = pts; st.source = "manuell eingefügt"; msg.textContent = pts.length + " Werte übernommen.";
+      recompute();
+    });
+    document.getElementById("gReset").addEventListener("click", function () {
+      document.getElementById("gPaste").value = "";
+      document.getElementById("gPasteMsg").textContent = "";
+      load();
+    });
+
+    function conv(v) { return st.unit === "ct" ? v / 10 : v; }
+    function unitLabel() { return st.unit === "ct" ? "ct/kWh" : "EUR/MWh"; }
+    function fmt(v, dec) {
+      if (v === null || v === undefined) return "–";
+      return nfmt(conv(v), dec !== undefined ? dec : (st.unit === "ct" ? 3 : 2));
+    }
+
+    function parseCsv(text) {
+      var out = [];
+      (text || "").split(/\r?\n/).forEach(function (line) {
+        line = line.trim();
+        if (!line || line.charAt(0) === "#") return;
+        var m = line.match(/^(\d{4})-(\d{2})-(\d{2})[;,\t ]+(-?[\d.,]+)/);
+        if (!m) {
+          m = line.match(/^(\d{2})\.(\d{2})\.(\d{4})[;,\t ]+(-?[\d.,]+)/);
+          if (m) m = [m[0], m[3], m[2], m[1], m[4]];
+        }
+        if (!m) return;
+        var num = m[4];
+        // "61,372" -> 61.372 ; "1.234,56" -> 1234.56
+        if (num.indexOf(",") > -1 && num.indexOf(".") > -1) num = num.replace(/\./g, "").replace(",", ".");
+        else if (num.indexOf(",") > -1) num = num.replace(",", ".");
+        var v = parseFloat(num);
+        if (isNaN(v)) return;
+        out.push({ y: +m[1], m: +m[2], d: +m[3], v: v });
+      });
+      out.sort(function (a, b) { return (a.y * 10000 + a.m * 100 + a.d) - (b.y * 10000 + b.m * 100 + b.d); });
+      return out;
+    }
+
+    function load() {
+      var el = document.getElementById("gStatus");
+      document.getElementById("gPlot").style.display = "none";
+      el.style.display = "block"; el.textContent = "Lade Gasdaten …";
+      fetch("data/ceghix.csv", { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (t) {
+          var pts = parseCsv(t);
+          if (!pts.length) throw new Error("leer");
+          st.raw = pts; st.source = "data/ceghix.csv"; recompute();
+        })
+        .catch(function () {
+          st.raw = null;
+          el.innerHTML = "Keine Gasdaten gefunden.<br>" +
+            "Lege <code>data/ceghix.csv</code> an oder füg unten Werte ein — die Tageswerte stehen auf " +
+            '<a href="https://www.cegh.at/de/gasboerse/indizes/" target="_blank" rel="noopener">cegh.at</a>.';
+        });
+    }
+
+    function recompute() {
+      if (!st.raw || !st.raw.length) return;
+      var B = {};
+      st.raw.forEach(function (r) {
+        var b = bucketOf({ y: r.y, m: r.m, d: r.d, key: r.y + "-" + String(r.m).padStart(2, "0") + "-" + String(r.d).padStart(2, "0") }, st.agg);
+        var o = B[b.key] || (B[b.key] = { key: b.key, label: b.label, sort: b.sort, sum: 0, n: 0 });
+        o.sum += r.v; o.n++;
+      });
+      st.series = Object.keys(B).map(function (k) { return B[k]; })
+        .sort(function (a, b) { return a.sort - b.sort; })
+        .map(function (o) { return { key: o.key, label: o.label, n: o.n, ceghix: o.sum / o.n }; });
+      render();
+    }
+
+    function render() {
+      if (!st.series || !st.series.length) return;
+      document.getElementById("gStatus").style.display = "none";
+      document.getElementById("gPlot").style.display = "block";
+      var aggName = st.agg === "day" ? "Tagesmittel" : st.agg === "week" ? "Wochenmittel" : "Monatsmittel";
+      document.getElementById("gChartTitle").textContent = "Erdgas — CEGHIX " + aggName + " (CEGH VTP Austria)";
+      document.getElementById("gChartNote").textContent = st.series.length + " Perioden · " + unitLabel() + " netto · Quelle: " + st.source;
+
+      var s = st.series, last = s[s.length - 1], prev = s.length > 1 ? s[s.length - 2] : null;
+      var lbl = st.agg === "day" ? "Letzter Tag" : st.agg === "week" ? "Letzte Woche" : "Letzter Monat";
+      var d = "";
+      if (prev) {
+        var pct = (last.ceghix - prev.ceghix) / Math.abs(prev.ceghix) * 100;
+        d = " · " + (pct >= 0 ? "+" : "−") + Math.abs(pct).toFixed(1) + " % ggü. Vorperiode";
+      }
+      var avg = s.reduce(function (a, b) { return a + b.ceghix; }, 0) / s.length;
+      var min = s.reduce(function (a, b) { return b.ceghix < a.ceghix ? b : a; });
+      var max = s.reduce(function (a, b) { return b.ceghix > a.ceghix ? b : a; });
+
+      document.getElementById("gTiles").innerHTML =
+        tile("Erdgas · " + lbl + " · CEGHIX", fmt(last.ceghix), unitLabel(), last.label + d) +
+        tile("Erdgas · Ø Zeitraum", fmt(avg), unitLabel(), s[0].label + " – " + last.label) +
+        tile("Spanne im Zeitraum", fmt(min.ceghix) + "–" + fmt(max.ceghix), unitLabel(), "Tief " + min.label + " · Hoch " + max.label, "sm") +
+        tile("Datenpunkte", String(st.raw.length), "Tage", "aus " + st.source, "sm");
+
+      drawChart({
+        svgEl: document.getElementById("gPlot"), tooltipEl: document.getElementById("gTooltip"),
+        holderEl: document.getElementById("gPlotHolder"), series: s,
+        fields: [{ key: "ceghix", color: "var(--series-2)", label: "CEGHIX", emph: true }],
+        fmt: function (v) { return fmt(v); }, fmtAxis: function (v) { return fmt(v, st.unit === "ct" ? 2 : 1); },
+        unitLabel: unitLabel()
+      });
+      renderCalc(); renderTable();
+    }
+
+    function renderCalc() {
+      if (!st.series || !st.series.length) return;
+      var last = st.series[st.series.length - 1];
+      var hf = parseFloat(document.getElementById("gHF").value) || 0;
+      var co2 = parseFloat(document.getElementById("gCO2").value) || 0;
+      var svc = parseFloat(document.getElementById("gService").value) || 0;
+      var use = parseFloat(document.getElementById("gUse").value) || 0;
+
+      var spotCt = last.ceghix / 10, hfCt = hf / 10;
+      var ap = spotCt + hfCt, energie = ap + co2;
+      var kwhM = use / 12, svcCt = kwhM > 0 ? (svc / kwhM) * 100 : 0;
+      var ges = energie + svcCt, monat = (energie / 100) * kwhM + svc;
+      var per = st.agg === "day" ? "Tag" : st.agg === "week" ? "Woche" : "Monat";
+      document.getElementById("gCalcBasis").textContent = per + " " + last.label;
+
+      document.getElementById("gCalcOut").innerHTML =
+        '<div class="result-row"><span>CEGHIX Spot — ' + per + ' ' + last.label + '</span><span>' + nfmt(spotCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row"><span>+ Handlingfee</span><span>' + nfmt(hfCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row" style="color:var(--text-primary)"><span><strong>= Arbeitspreis (Formel P<sub>n</sub>)</strong></span><span><strong>' + nfmt(ap, 3) + ' ct/kWh</strong></span></div>' +
+        '<div class="result-row"><span>+ CO₂-Bepreisung (NEHG)</span><span>' + nfmt(co2, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row"><span>+ Servicepauschale umgelegt (' + nfmt(kwhM, 0) + ' kWh/Monat)</span><span>' + nfmt(svcCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row total"><span>Energiekosten gesamt</span><span>' + nfmt(ges, 2) + ' ct/kWh netto</span></div>' +
+        '<div class="result-row"><span>entspricht rund</span><span>' + nfmt(monat, 2) + ' EUR/Monat · ' + nfmt(monat * 12, 0) + ' EUR/Jahr</span></div>' +
+        '<div class="result-row" style="font-size:11.5px;color:var(--text-muted);border-top:1px solid var(--grid);margin-top:6px;padding-top:8px"><span>Der CEGHIX ist ein Tagesindex — eine Lastgewichtung nach Stunden gibt es hier nicht. Ohne Netzentgelte, Erdgasabgabe und USt. Richtwert, keine Angebotsgrundlage.</span></div>';
+    }
+
+    function renderTable() {
+      var s = st.series;
+      var h = '<thead><tr><th>Periode</th><th>CEGHIX ' + unitLabel() + '</th><th>Tage</th></tr></thead><tbody>';
+      for (var i = s.length - 1; i >= 0; i--) h += '<tr><td>' + s[i].key + '</td><td>' + fmt(s[i].ceghix) + '</td><td>' + s[i].n + '</td></tr>';
+      document.getElementById("gDataTable").innerHTML = h + '</tbody>';
+    }
+
+    load();
+    return { render: function () { if (st.series) render(); } };
+  })();
+
+})();
+</script>
+</body>
+</html>
