@@ -337,12 +337,10 @@
     </div>
 
     <div class="callout">
-      <strong>Warum Gas nicht live ist.</strong> Der CEGH betreibt keine offene, frei abrufbare
-      Schnittstelle wie die Strombörse — die Werte lassen sich nicht automatisch nachladen.
-      Diese Seite liest deshalb die Datei <code>data/ceghix.csv</code> aus dem Repository.
-      Trag dort neue Werte ein (eine Zeile pro Tag: <code>JJJJ-MM-TT;Preis</code>) oder füg sie unten
-      direkt ein. Der maßgebliche Index für <em>Erdgas KMU Spot</em> ist der <strong>CEGHIX</strong>,
-      der volumengewichtete Durchschnitt der Day-Ahead- und Wochenendkontrakte.
+      <strong>Live wie Strom.</strong> Der CEGHIX (EEX EGSI CEGH VTP Day) kommt automatisch
+      aus dem öffentlichen Day-Ahead-Export von <a href="https://www.cegh.at/en/direct-download-links/" target="_blank" rel="noopener">cegh.at</a>
+      — volumengewichteter Durchschnitt der Day-Ahead- und Wochenendkontrakte, zugeordnet zum <em>Lieferstag</em>.
+      Aktualisierung beim Öffnen, im CRM alle 15 Minuten. Die lokale CSV bleibt Fallback/Historie.
     </div>
 
     <div class="card">
@@ -377,8 +375,8 @@
 
     <div class="card">
       <div class="chart-head">
-        <h2 class="chart-title">CEGHIX-Werte nachtragen</h2>
-        <span class="chart-note">wirkt sofort, wird nicht gespeichert</span>
+        <h2 class="chart-title">CEGHIX manuell ergänzen</h2>
+        <span class="chart-note">optional · wirkt sofort, nicht gespeichert</span>
       </div>
       <p class="sub" style="margin:8px 0 10px">Eine Zeile je Tag. Erlaubt: <code>2026-08-12;61,372</code> ·
         <code>12.08.2026 61.372</code> · <code>2026-08-12,61.372</code>. Kopfzeilen werden ignoriert.
@@ -408,7 +406,9 @@
     <a href="https://api.energy-charts.info/" target="_blank" rel="noopener">energy-charts.info API</a>
     (Fraunhofer ISE, Rohdaten SMARD / Bundesnetzagentur, CC BY 4.0); Fallback
     <a href="https://api.awattar.de/v1/marketdata" target="_blank" rel="noopener">aWATTar</a>.
-    <strong>Erdgas:</strong> CEGHIX, manuell gepflegt aus <a href="https://www.cegh.at/de/gasboerse/indizes/" target="_blank" rel="noopener">cegh.at</a>.<br>
+    <strong>Erdgas:</strong> CEGHIX live aus dem
+    <a href="https://www.cegh.at/en/direct-download-links/" target="_blank" rel="noopener">CEGH Day-Ahead-Export</a>
+    (EGSI CEGH VTP Day); Fallback <code>data/ceghix.csv</code>.<br>
     Alle Werte netto — ohne Netzentgelte, Abgaben und USt. Zeitzone Europe/Vienna.
     Lastprofile sind Näherungen, keine amtlichen SLP-Koeffizienten. Angaben ohne Gewähr;
     maßgeblich ist die Abrechnung des Lieferanten.
@@ -876,23 +876,80 @@
       return out;
     }
 
+    function ymdToPt(date, v) {
+      var p = String(date).split("-");
+      if (p.length !== 3) return null;
+      var n = Number(v);
+      if (!isFinite(n)) return null;
+      return { y: +p[0], m: +p[1], d: +p[2], v: n };
+    }
+    function mergePts() {
+      var map = {};
+      Array.prototype.slice.call(arguments).forEach(function (arr) {
+        (arr || []).forEach(function (r) {
+          if (!r) return;
+          var k = r.y + "-" + String(r.m).padStart(2, "0") + "-" + String(r.d).padStart(2, "0");
+          map[k] = r;
+        });
+      });
+      return Object.keys(map).sort().map(function (k) { return map[k]; });
+    }
+    function parseCeghExport(text) {
+      var da = {}, we = {};
+      String(text || "").split(/\r?\n/).forEach(function (line) {
+        var cols = line.split(";");
+        if (cols.length < 11) return;
+        var contract = (cols[1] || "").trim();
+        var raw = function (s) {
+          s = String(s || "").trim();
+          if (!s || s === "-") return null;
+          var n = parseFloat(s.replace(",", "."));
+          return isFinite(n) ? n : null;
+        };
+        var ix = raw(cols[10]);
+        if (ix == null) ix = raw(cols[9]);
+        if (ix == null) return;
+        var mDa = contract.match(/CEGH VTP DA (\d{4}-\d{2}-\d{2})/i);
+        if (mDa) { da[mDa[1]] = ix; return; }
+        var mWe = contract.match(/CEGH VTP WE (\d{4}-\d{2}-\d{2})\/(\d{2})/i);
+        if (mWe) {
+          var a = mWe[1], b = a.slice(0, 8) + mWe[2];
+          if (we[a] == null) we[a] = ix;
+          if (we[b] == null) we[b] = ix;
+        }
+      });
+      Object.keys(we).forEach(function (d) { if (da[d] == null) da[d] = we[d]; });
+      return Object.keys(da).sort().map(function (d) { return ymdToPt(d, da[d]); }).filter(Boolean);
+    }
     function load() {
       var el = document.getElementById("gStatus");
       document.getElementById("gPlot").style.display = "none";
-      el.style.display = "block"; el.textContent = "Lade Gasdaten …";
-      fetch("data/ceghix.csv", { cache: "no-store" })
-        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-        .then(function (t) {
-          var pts = parseCsv(t);
-          if (!pts.length) throw new Error("leer");
-          st.raw = pts; st.source = "data/ceghix.csv"; recompute();
-        })
-        .catch(function () {
-          st.raw = null;
-          el.innerHTML = "Keine Gasdaten gefunden.<br>" +
-            "Lege <code>data/ceghix.csv</code> an oder füg unten Werte ein — die Tageswerte stehen auf " +
-            '<a href="https://www.cegh.at/de/gasboerse/indizes/" target="_blank" rel="noopener">cegh.at</a>.';
-        });
+      el.style.display = "block"; el.textContent = "Lade CEGHIX live …";
+      var liveUrl = "https://api.angebote.xolvix.ai/api/ext/ceghix";
+      var ceghUrl = "https://www.cegh.at/wp-admin/admin-ajax.php?action=exportPosts&postType=day-ahead&market=AT";
+      Promise.all([
+        fetch(liveUrl).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+        fetch(ceghUrl).then(function (r) { return r.ok ? r.text() : ""; }).catch(function () { return ""; }),
+        fetch("data/ceghix.csv", { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).catch(function () { return ""; })
+      ]).then(function (res) {
+        var api = res[0], ceghTxt = res[1], csvTxt = res[2];
+        var fromApi = [];
+        if (api && api.ok && api.points) {
+          fromApi = api.points.map(function (p) { return ymdToPt(p.date, p.ceghix); }).filter(Boolean);
+        }
+        var fromCegh = parseCeghExport(ceghTxt);
+        var fromCsv = parseCsv(csvTxt);
+        var pts = mergePts(fromCsv, fromCegh, fromApi);
+        if (!pts.length) throw new Error("leer");
+        st.raw = pts;
+        st.source = fromApi.length ? "CEGH live (Lieferstag)" : (fromCegh.length ? "CEGH Export" : "data/ceghix.csv");
+        recompute();
+      }).catch(function () {
+        st.raw = null;
+        el.innerHTML = "Gas-Daten konnten nicht geladen werden.<br>" +
+          "CEGHIX live über die API oder unten Werte einfügen — Quelle: " +
+          '<a href="https://www.cegh.at/en/direct-download-links/" target="_blank" rel="noopener">cegh.at Day Ahead</a>.';
+      });
     }
 
     function recompute() {

@@ -1,7 +1,7 @@
 # Spotpreis-Monitor
 
 Dashboard für die beiden Referenzindizes österreichischer Spotpreis-Tarife — **Strom**
-(EPEX SPOT DE-LU Day-Ahead, live) und **Erdgas** (CEGH VTP Austria / CEGHIX, manuell gepflegt).
+(EPEX SPOT DE-LU Day-Ahead, live) und **Erdgas** (CEGH VTP Austria / CEGHIX, live).
 Gebaut als Vertriebswerkzeug für Produkte wie *Strom KMU Spot* und *Erdgas KMU Spot*
 der Energie Klagenfurt GmbH.
 
@@ -60,27 +60,21 @@ rechnet die Formel tatsächlich durch — mit E(n) aus dem gewählten Branchenpr
 |---|---|---|---|
 | Strom | EPEX SPOT DE-LU Day-Ahead | [energy-charts.info API](https://api.energy-charts.info/) (Fraunhofer ISE, Rohdaten [SMARD](https://www.smard.de/) / Bundesnetzagentur), CC BY 4.0 | ja |
 | Strom (Fallback) | EPEX SPOT DE-LU | [aWATTar API](https://api.awattar.de/v1/marketdata) | ja |
-| Erdgas | CEGHIX (CEGH VTP Austria) | [cegh.at](https://www.cegh.at/de/gasboerse/indizes/) → `data/ceghix.csv` | nein, manuell |
+| Erdgas | CEGHIX (CEGH VTP Austria) | [CEGH Day-Ahead-Export](https://www.cegh.at/en/direct-download-links/) über `https://api.angebote.xolvix.ai/api/ext/ceghix` | ja |
 
 **Warum Strom auf DE und nicht AT läuft:** die Preisblätter nennen ausdrücklich den
 *EPEX DE Spotpreis* bzw. „Viertelstundenpreise des Power Spot Market DE" — geliefert wird
 in Österreich, indexiert wird auf Deutschland. Für die Gebotszone Österreich im Skript
 `bzn=DE-LU` auf `bzn=AT` ändern.
 
-### Gaspreise pflegen
+### Gaspreise
 
-Der CEGH hat keine offene Schnittstelle. Die Tageswerte stehen auf
-[cegh.at/de/gasboerse/indizes](https://www.cegh.at/de/gasboerse/indizes/) und gehören in
-`data/ceghix.csv`, eine Zeile pro Tag:
+CEGHIX kommt live aus dem öffentlichen Day-Ahead-CSV von CEGH (Spalte `CEGHIX`,
+zugeordnet zum Lieferstag des DA-Kontrakts). Der Browser holt das über den
+Xolvix-Proxy `/api/ext/ceghix` (CEGH selbst sendet kein CORS).
+`data/ceghix.csv` bleibt Fallback und wächst per GitHub Action mit.
 
-```
-2026-08-12;61,372
-2026-08-11;60,746
-```
-
-Komma oder Punkt als Dezimaltrennzeichen, `TT.MM.JJJJ` geht auch, `#`-Zeilen werden ignoriert.
-Zum schnellen Ausprobieren gibt es im Gas-Tab ein Eingabefeld — das wirkt sofort, wird aber
-nicht gespeichert. Dauerhaft wird es erst mit einem Commit.
+Manuell im Gas-Tab einfügen wirkt sofort, wird aber nicht gespeichert.
 
 ## Nutzung
 
