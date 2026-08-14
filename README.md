@@ -1,9 +1,10 @@
 # Spotpreis-Monitor
 
 Dashboard für die beiden Referenzindizes österreichischer Spotpreis-Tarife — **Strom**
-(EPEX SPOT DE-LU Day-Ahead, live) und **Erdgas** (CEGH VTP Austria / CEGHIX, live).
+(EPEX SPOT AT Day-Ahead, live) und **Erdgas** (CEGH VTP Austria / CEGHIX, live).
 Gebaut als Vertriebswerkzeug für Produkte wie *Strom KMU Spot* und *Erdgas KMU Spot*
-der Energie Klagenfurt GmbH.
+der Energie Klagenfurt GmbH. Ab Vertrag Version 1 | 2026 indexiert Strom auf den
+**Power Spot Market AT** (Viertelstunden), nicht mehr DE-LU.
 
 **Live-Version:** https://olikep.github.io/spotpreis-monitor/
 
@@ -58,14 +59,14 @@ rechnet die Formel tatsächlich durch — mit E(n) aus dem gewählten Branchenpr
 
 | Energieträger | Index | Quelle | Live? |
 |---|---|---|---|
-| Strom | EPEX SPOT DE-LU Day-Ahead | [energy-charts.info API](https://api.energy-charts.info/) (Fraunhofer ISE, Rohdaten [SMARD](https://www.smard.de/) / Bundesnetzagentur), CC BY 4.0 | ja |
-| Strom (Fallback) | EPEX SPOT DE-LU | [aWATTar API](https://api.awattar.de/v1/marketdata) | ja |
+| Strom | EPEX SPOT AT Day-Ahead | [energy-charts.info API](https://api.energy-charts.info/) `bzn=AT` (Fraunhofer ISE, CC BY 4.0) | ja |
+| Strom (Fallback) | EPEX SPOT AT | [aWATTar AT API](https://api.awattar.at/v1/marketdata) | ja |
 | Erdgas | CEGHIX (CEGH VTP Austria) | [CEGH Day-Ahead-Export](https://www.cegh.at/en/direct-download-links/) über `https://api.angebote.xolvix.ai/api/ext/ceghix` | ja |
 
-**Warum Strom auf DE und nicht AT läuft:** die Preisblätter nennen ausdrücklich den
-*EPEX DE Spotpreis* bzw. „Viertelstundenpreise des Power Spot Market DE" — geliefert wird
-in Österreich, indexiert wird auf Deutschland. Für die Gebotszone Österreich im Skript
-`bzn=DE-LU` auf `bzn=AT` ändern.
+**Warum Strom auf AT läuft:** der Liefervertrag *Strom KMU Spot* (EKG, Version 1 | 2026)
+nennt ausdrücklich **EPEX AT SPOT** — „Viertelstundenpreise des Power Spot Market AT“.
+Formel: Energiepreis = Börseneinkaufspreis + Handlingfee (ct/kWh) + HKN 0,42 ct/kWh
++ Servicepauschale 3,99 €/Monat je Zählpunkt.
 
 ### Gaspreise
 

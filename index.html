@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spotpreis-Monitor — Strom (EPEX DE-LU) &amp; Erdgas (CEGH)</title>
+<title>Spotpreis-Monitor — Strom (EPEX AT) &amp; Erdgas (CEGH)</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -189,7 +189,7 @@
 
   <div class="carrier" role="tablist" aria-label="Energieträger" id="carrierTabs">
     <button type="button" role="tab" data-v="strom" aria-selected="true">
-      <span class="dot" style="background:var(--series-1)"></span>Strom — EPEX SPOT DE-LU
+      <span class="dot" style="background:var(--series-1)"></span>Strom — EPEX SPOT AT
     </button>
     <button type="button" role="tab" data-v="gas" aria-selected="false">
       <span class="dot" style="background:var(--series-2)"></span>Erdgas — CEGH VTP Austria
@@ -267,13 +267,13 @@
       <div class="calc">
         <div class="field">
           <label for="inHF">Handlingfee</label>
-          <input type="number" id="inHF" value="15" step="0.5" min="0" inputmode="decimal">
-          <span class="hint">EUR/MWh — steht im Liefervertrag, nicht im Preisblatt</span>
+          <input type="number" id="inHF" value="1.5" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">ct/kWh — Handlingfee laut Antrag Strom KMU Spot</span>
         </div>
         <div class="field">
           <label for="inHKN">Stromqualität HKN</label>
-          <input type="number" id="inHKN" value="0.82" step="0.01" min="0" inputmode="decimal">
-          <span class="hint">ct/kWh — Preisblatt August 2026</span>
+          <input type="number" id="inHKN" value="0.42" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">ct/kWh — 0,42 laut Vertrag Strom KMU Spot</span>
         </div>
         <div class="field">
           <label for="inService">Servicepauschale</label>
@@ -402,10 +402,10 @@
   </section>
 
   <footer class="src">
-    <strong>Strom:</strong> EPEX SPOT DE-LU Day-Ahead über die
+    <strong>Strom:</strong> EPEX SPOT AT Day-Ahead (Power Spot Market AT, Viertelstunden) über die
     <a href="https://api.energy-charts.info/" target="_blank" rel="noopener">energy-charts.info API</a>
-    (Fraunhofer ISE, Rohdaten SMARD / Bundesnetzagentur, CC BY 4.0); Fallback
-    <a href="https://api.awattar.de/v1/marketdata" target="_blank" rel="noopener">aWATTar</a>.
+    (Fraunhofer ISE, Gebotszone AT, CC BY 4.0); Fallback
+    <a href="https://api.awattar.at/v1/marketdata" target="_blank" rel="noopener">aWATTar AT</a>.
     <strong>Erdgas:</strong> CEGHIX live aus dem
     <a href="https://www.cegh.at/en/direct-download-links/" target="_blank" rel="noopener">CEGH Day-Ahead-Export</a>
     (EGSI CEGH VTP Day); Fallback <code>data/ceghix.csv</code>.<br>
@@ -667,7 +667,7 @@
       el.style.display = "block"; el.textContent = "Lade Börsendaten …";
 
       var end = new Date(), start = new Date(end.getTime() - (st.range + 2) * 86400000);
-      var url = "https://api.energy-charts.info/price?bzn=DE-LU&start=" + ymd(start) + "&end=" + ymd(end);
+      var url = "https://api.energy-charts.info/price?bzn=AT&start=" + ymd(start) + "&end=" + ymd(end);
 
       fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (j) {
@@ -682,7 +682,7 @@
           st.raw = pts; recompute();
         })
         .catch(function (e1) {
-          fetch("https://api.awattar.de/v1/marketdata?start=" + (Date.now() - st.range * 86400000))
+          fetch("https://api.awattar.at/v1/marketdata?start=" + (Date.now() - st.range * 86400000))
             .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
             .then(function (j) {
               var pts = (j.data || []).map(function (d) { return [d.start_timestamp, d.marketprice]; });
@@ -735,7 +735,7 @@
       document.getElementById("status").style.display = "none";
       document.getElementById("plot").style.display = "block";
       var aggName = st.agg === "day" ? "Tagesmittel" : st.agg === "week" ? "Wochenmittel" : "Monatsmittel";
-      document.getElementById("chartTitle").textContent = "Strom — " + aggName + " (EPEX SPOT DE-LU)";
+      document.getElementById("chartTitle").textContent = "Strom — " + aggName + " (EPEX SPOT AT)";
       document.getElementById("chartNote").textContent = st.series.length + " Perioden · " + unitLabel() + " netto";
 
       var p = PROF_BY_ID[st.prof], useProf = st.prof !== "base" && st.prof !== "peak";
@@ -788,7 +788,7 @@
       var svc = parseFloat(document.getElementById("inService").value) || 0;
       var use = parseFloat(document.getElementById("inUse").value) || 0;
 
-      var spotCt = spot / 10, hfCt = hf / 10;
+      var spotCt = spot / 10, hfCt = hf;
       var ap = spotCt + hfCt, energie = ap + hkn;
       var kwhM = use / 12, svcCt = kwhM > 0 ? (svc / kwhM) * 100 : 0;
       var ges = energie + svcCt, monat = (energie / 100) * kwhM + svc;
