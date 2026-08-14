@@ -184,7 +184,8 @@
     <div>
       <h1>Spotpreis-Monitor</h1>
       <p class="sub">Börsenpreis-Entwicklung als Tages-, Wochen- und Monatsmittel — Referenzindizes für Spotpreis-Tarife
-        (<em>Strom KMU Spot</em> und <em>Erdgas KMU Spot</em>, Energie Klagenfurt GmbH).</p>
+        (<em>Strom KMU Spot</em> und <em>Erdgas KMU Spot</em>, Energie Klagenfurt GmbH).
+        Oben: <strong>Heute</strong> und <strong>Morgen (Liefertag)</strong> mit Datum — nicht „letzter Tag“ im Chart.</p>
     </div>
     <button class="theme-btn" id="themeBtn" type="button">Dunkel / Hell</button>
   </header>
@@ -235,7 +236,13 @@
       </div>
     </div>
 
-    <div class="tiles liefer-tiles" id="lieferTiles"></div>
+    <div class="card" id="lieferCard">
+      <div class="chart-head">
+        <h2 class="chart-title">Zum Laden — Heute &amp; Morgen</h2>
+        <span class="chart-note">EPEX AT in ct/kWh · Handlingfee extra · ohne HKN</span>
+      </div>
+      <div class="tiles liefer-tiles" id="lieferTiles"></div>
+    </div>
     <div class="tiles" id="tiles"></div>
 
     <div class="card">
@@ -678,35 +685,62 @@
       document.getElementById("plot").style.display = "none";
       el.style.display = "block"; el.textContent = "Lade Börsendaten …";
 
-      var end = new Date(Date.now() + 2 * 86400000), start = new Date(Date.now() - (st.range + 2) * 86400000);
-      var url = "https://api.energy-charts.info/price?bzn=AT&start=" + ymd(start) + "&end=" + ymd(end);
+      var heute = localParts(Date.now()).key;
+      var endY = addYmd(heute, 2);
+      var startY = addYmd(heute, -(st.range + 2));
+      var jobs = [];
+      var cur = startY;
+      while (cur < endY) {
+        var nxt = addYmd(cur, 21);
+        if (nxt > endY) nxt = endY;
+        jobs.push(fetchChunk(cur, nxt));
+        cur = nxt;
+      }
 
-      fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(function (j) {
-          if (!j || !j.unix_seconds || !j.price) throw new Error("Unerwartetes Datenformat");
-          var pts = [];
-          for (var i = 0; i < j.unix_seconds.length; i++) {
-            var v = j.price[i];
-            if (v === null || v === undefined || isNaN(v)) continue;
-            pts.push([j.unix_seconds[i] * 1000, v]);
-          }
-          if (!pts.length) throw new Error("Keine Werte im Zeitraum");
-          st.raw = pts; recompute();
-        })
-        .catch(function (e1) {
-          fetch("https://api.awattar.at/v1/marketdata?start=" + (Date.now() - st.range * 86400000))
-            .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-            .then(function (j) {
-              var pts = (j.data || []).map(function (d) { return [d.start_timestamp, d.marketprice]; });
-              if (!pts.length) throw new Error("leer");
-              st.raw = pts; recompute();
-            })
-            .catch(function () {
-              el.innerHTML = "Strom-Daten konnten nicht geladen werden (" + e1.message + ").<br>" +
-                "Meist blockiert das eine Firewall, oder die Datei wurde offline geöffnet.<br>" +
-                'Preise direkt: <a href="https://www.smard.de/home/marktdaten" target="_blank" rel="noopener">smard.de</a>';
-            });
+      Promise.all(jobs).then(function (chunks) {
+        var seen = {}, pts = [];
+        chunks.forEach(function (chunk) {
+          (chunk || []).forEach(function (p) {
+            if (seen[p[0]]) return;
+            seen[p[0]] = 1;
+            pts.push(p);
+          });
         });
+        pts.sort(function (a, b) { return a[0] - b[0]; });
+        if (!pts.length) throw new Error("Keine Werte im Zeitraum");
+        st.raw = pts;
+        recompute();
+      }).catch(function (e1) {
+        fetch("https://api.awattar.at/v1/marketdata?start=" + (Date.now() - st.range * 86400000))
+          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(function (j) {
+            var pts = (j.data || []).map(function (d) { return [d.start_timestamp, d.marketprice]; });
+            if (!pts.length) throw new Error("leer");
+            st.raw = pts; recompute();
+          })
+          .catch(function () {
+            el.innerHTML = "Strom-Daten konnten nicht geladen werden (" + e1.message + ").<br>" +
+              "Meist blockiert das eine Firewall, oder die Datei wurde offline geöffnet.<br>" +
+              'Preise direkt: <a href="https://www.smard.de/home/marktdaten" target="_blank" rel="noopener">smard.de</a>';
+          });
+      });
+    }
+
+    function fetchChunk(startY, endY) {
+      var url = "https://api.energy-charts.info/price?bzn=AT&start=" + startY + "&end=" + endY;
+      return fetch(url).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (j) {
+        var pts = [];
+        if (!j || !j.unix_seconds) return pts;
+        for (var i = 0; i < j.unix_seconds.length; i++) {
+          var v = j.price[i];
+          if (v === null || v === undefined || isNaN(v)) continue;
+          pts.push([j.unix_seconds[i] * 1000, v]);
+        }
+        return pts;
+      });
     }
 
     function recompute() {
@@ -796,23 +830,34 @@
       if (isNaN(hf)) hf = 0;
       var html = "";
       if (show) {
-        var metaM = fmtYmdDe(proxy ? heute : morgen)
-          + " · Tief " + nfmt(ct(show.min), 2) + " · Hoch " + nfmt(ct(show.max), 2) + " ct";
+        var tag = proxy ? heute : morgen;
+        var metaM = fmtYmdDe(tag)
+          + " · Tief " + nfmt(ct(show.min), 2) + " · Hoch " + nfmt(ct(show.max), 2) + " ct"
+          + " · " + nfmt(show.base, 1) + " EUR/MWh";
         if (proxy) metaM += " · Auktion ausstehend, Heute als Näherung";
-        else metaM += " · " + show.n + " Viertelstunden";
-        html += tile("Morgen · Liefertag · EPEX AT", nfmt(ct(show.base), 2), "ct/kWh", metaM, null, true, proxy ? "proxy" : "");
+        html += tile("Morgen " + fmtYmdDe(tag) + " · Liefertag · EPEX AT", nfmt(ct(show.base), 2), "ct/kWh", metaM, null, true, proxy ? "proxy" : "");
       }
       if (tS) {
-        html += tile("Heute · EPEX AT", nfmt(ct(tS.base), 2), "ct/kWh",
-          fmtYmdDe(heute) + " · Tief " + nfmt(ct(tS.min), 2) + " · Hoch " + nfmt(ct(tS.max), 2) + " ct");
+        html += tile("Heute " + fmtYmdDe(heute) + " · EPEX AT", nfmt(ct(tS.base), 2), "ct/kWh",
+          "Tief " + nfmt(ct(tS.min), 2) + " · Hoch " + nfmt(ct(tS.max), 2) + " ct · " + nfmt(tS.base, 1) + " EUR/MWh");
       }
       html += tile("Handlingfee", nfmt(hf, 2), "ct/kWh", "laut Antrag · extra zum EPEX · ohne HKN");
       el.innerHTML = html;
     }
 
+    function seriesDayLabel(key) {
+      var heute = localParts(Date.now()).key;
+      var morgen = addYmd(heute, 1);
+      if (st.agg !== "day") return null;
+      if (key === morgen) return "Morgen " + fmtYmdDe(key);
+      if (key === heute) return "Heute " + fmtYmdDe(key);
+      return fmtYmdDe(key);
+    }
+
     function renderTiles(useProf, p) {
       var s = st.series, last = s[s.length - 1], prev = s.length > 1 ? s[s.length - 2] : null;
-      var lbl = st.agg === "day" ? "Letzter Tag" : st.agg === "week" ? "Letzte Woche" : "Letzter Monat";
+      var named = seriesDayLabel(last.key);
+      var lbl = named || (st.agg === "week" ? "Letzte Woche" : st.agg === "month" ? "Letzter Monat" : last.label);
       var d = "";
       if (prev && prev.base) {
         var pct = (last.base - prev.base) / Math.abs(prev.base) * 100;
@@ -824,8 +869,8 @@
       var max = s.reduce(function (a, b) { return b.base > a.base ? b : a; });
 
       var html = "";
-      if (useProf) html += tile("Strom · " + lbl + " · " + p.id, fmt(last.prof), unitLabel(), p.name.split(" — ")[1] || p.name, null, true);
-      html += tile("Strom · " + lbl + " · Base", fmt(last.base), unitLabel(), last.label + d) +
+      if (useProf) html += tile("Strom · " + lbl + " · " + p.id, fmt(last.prof), unitLabel(), (p.name.split(" — ")[1] || p.name) + d);
+      html += tile("Strom · " + lbl + " · Base", fmt(last.base), unitLabel(), (named || last.label) + d) +
               tile("Strom · " + lbl + " · Peak", fmt(last.peak), unitLabel(), "Mo–Fr 08–20 Uhr") +
               tile("Strom · Ø Zeitraum · Base", fmt(avg), unitLabel(), s[0].label + " – " + last.label);
       if (!useProf) html += tile("Spanne im Zeitraum", fmt(min.base) + "–" + fmt(max.base), unitLabel(), "Tief " + min.label + " · Hoch " + max.label, "sm");
