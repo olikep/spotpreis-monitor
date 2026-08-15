@@ -120,6 +120,9 @@
 
   .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 10px; }
   .legend-item { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-secondary); }
+  .legend-item.toggle { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .legend-item.toggle:hover { color: var(--text-primary); }
+  .legend-item.off { opacity: 0.38; text-decoration: line-through; }
   .legend-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
 
   .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 2px; }
@@ -655,7 +658,7 @@
      STROM
      ============================================================ */
   var S = (function () {
-    var st = { agg: "day", range: 90, unit: "ct", prof: "G0", raw: null, series: null };
+    var st = { agg: "day", range: 90, unit: "ct", prof: "G0", raw: null, series: null, showBase: true, showPeak: true };
 
     var sel = document.getElementById("profSel");
     PROFILES.forEach(function (p) {
@@ -761,10 +764,9 @@
     }
 
     function fields() {
-      var f = [
-        { key: "base", color: "var(--series-1)", label: "Base" },
-        { key: "peak", color: "var(--series-2)", label: "Peak" }
-      ];
+      var f = [];
+      if (st.showBase) f.push({ key: "base", color: "var(--series-1)", label: "Base" });
+      if (st.showPeak) f.push({ key: "peak", color: "var(--series-2)", label: "Peak" });
       if (st.prof !== "base" && st.prof !== "peak") {
         f.push({ key: "prof", color: "var(--series-3)", label: PROF_BY_ID[st.prof].id, emph: true });
       }
@@ -780,10 +782,20 @@
       document.getElementById("chartNote").textContent = st.series.length + " Perioden · " + unitLabel() + " netto";
 
       var p = PROF_BY_ID[st.prof], useProf = st.prof !== "base" && st.prof !== "peak";
-      var leg = '<span class="legend-item"><span class="legend-swatch" style="background:var(--series-1)"></span>Base — alle Viertelstunden</span>' +
-                '<span class="legend-item"><span class="legend-swatch" style="background:var(--series-2)"></span>Peak — Mo–Fr 08:00–20:00</span>';
+      var leg = '<button type="button" class="legend-item toggle' + (st.showBase ? "" : " off") + '" data-series="base" aria-pressed="' + String(st.showBase) + '">' +
+                '<span class="legend-swatch" style="background:var(--series-1)"></span>Base — alle Viertelstunden</button>' +
+                '<button type="button" class="legend-item toggle' + (st.showPeak ? "" : " off") + '" data-series="peak" aria-pressed="' + String(st.showPeak) + '">' +
+                '<span class="legend-swatch" style="background:var(--series-2)"></span>Peak — Mo–Fr 08:00–20:00</button>';
       if (useProf) leg += '<span class="legend-item"><span class="legend-swatch" style="background:var(--series-3)"></span><strong style="color:var(--text-primary)">' + p.name + '</strong> — lastgewichtet</span>';
-      document.getElementById("legend").innerHTML = leg;
+      var legendEl = document.getElementById("legend");
+      legendEl.innerHTML = leg;
+      legendEl.onclick = function (e) {
+        var b = e.target.closest("[data-series]"); if (!b) return;
+        var k = b.getAttribute("data-series");
+        if (k === "base") st.showBase = !st.showBase;
+        if (k === "peak") st.showPeak = !st.showPeak;
+        render();
+      };
 
       renderLiefer();
       renderTiles(useProf, p);
