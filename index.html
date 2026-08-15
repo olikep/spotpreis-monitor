@@ -202,6 +202,14 @@
   <!-- ============================= STROM ============================= -->
   <section id="viewStrom">
 
+    <div class="card" id="lieferCard">
+      <div class="chart-head">
+        <h2 class="chart-title">Zum Laden — Heute &amp; Morgen</h2>
+        <span class="chart-note">EPEX AT in ct/kWh · Handlingfee extra · ohne HKN</span>
+      </div>
+      <div class="tiles liefer-tiles" id="lieferTiles"></div>
+    </div>
+
     <div class="card">
       <div class="controls">
         <div class="ctl-group">
@@ -236,13 +244,6 @@
       </div>
     </div>
 
-    <div class="card" id="lieferCard">
-      <div class="chart-head">
-        <h2 class="chart-title">Zum Laden — Heute &amp; Morgen</h2>
-        <span class="chart-note">EPEX AT in ct/kWh · Handlingfee extra · ohne HKN</span>
-      </div>
-      <div class="tiles liefer-tiles" id="lieferTiles"></div>
-    </div>
     <div class="tiles" id="tiles"></div>
 
     <div class="card">
@@ -680,66 +681,60 @@
       return nfmt(conv(v), dec !== undefined ? dec : (st.unit === "ct" ? 2 : 1));
     }
 
+    function mergePts(chunks) {
+      var seen = {}, pts = [];
+      (chunks || []).forEach(function (chunk) {
+        (chunk || []).forEach(function (p) {
+          if (seen[p[0]]) return;
+          seen[p[0]] = 1;
+          pts.push(p);
+        });
+      });
+      pts.sort(function (a, b) { return a[0] - b[0]; });
+      return pts;
+    }
+
     function load() {
       var el = document.getElementById("status");
       document.getElementById("plot").style.display = "none";
       el.style.display = "block"; el.textContent = "Lade Börsendaten …";
 
-      var heute = localParts(Date.now()).key;
-      var endY = addYmd(heute, 2);
-      var startY = addYmd(heute, -(st.range + 2));
-      var jobs = [];
-      var cur = startY;
-      while (cur < endY) {
-        var nxt = addYmd(cur, 21);
-        if (nxt > endY) nxt = endY;
-        jobs.push(fetchChunk(cur, nxt));
-        cur = nxt;
-      }
+      var jetzt = Date.now();
+      var startMs = jetzt - st.range * 86400000;
+      var endMs = jetzt + 2 * 86400000;
 
-      Promise.all(jobs).then(function (chunks) {
-        var seen = {}, pts = [];
-        chunks.forEach(function (chunk) {
-          (chunk || []).forEach(function (p) {
-            if (seen[p[0]]) return;
-            seen[p[0]] = 1;
-            pts.push(p);
-          });
-        });
-        pts.sort(function (a, b) { return a[0] - b[0]; });
+      // energy-charts blockiert Browser-CORS. aWattar liefert EPEX AT,
+      // aber nur mit start UND end — sonst 24h ab start (z.B. 16.07.).
+      fetchAwattar(startMs, endMs).then(function (pts) {
         if (!pts.length) throw new Error("Keine Werte im Zeitraum");
         st.raw = pts;
         recompute();
       }).catch(function (e1) {
-        fetch("https://api.awattar.at/v1/marketdata?start=" + (Date.now() - st.range * 86400000))
-          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-          .then(function (j) {
-            var pts = (j.data || []).map(function (d) { return [d.start_timestamp, d.marketprice]; });
-            if (!pts.length) throw new Error("leer");
-            st.raw = pts; recompute();
-          })
-          .catch(function () {
-            el.innerHTML = "Strom-Daten konnten nicht geladen werden (" + e1.message + ").<br>" +
-              "Meist blockiert das eine Firewall, oder die Datei wurde offline geöffnet.<br>" +
-              'Preise direkt: <a href="https://www.smard.de/home/marktdaten" target="_blank" rel="noopener">smard.de</a>';
-          });
+        el.innerHTML = "Strom-Daten konnten nicht geladen werden (" + e1.message + ").<br>" +
+          "Meist blockiert das eine Firewall, oder die Datei wurde offline geöffnet.<br>" +
+          'Preise direkt: <a href="https://www.smard.de/home/marktdaten" target="_blank" rel="noopener">smard.de</a>';
       });
     }
 
-    function fetchChunk(startY, endY) {
-      var url = "https://api.energy-charts.info/price?bzn=AT&start=" + startY + "&end=" + endY;
+    function fetchAwattar(startMs, endMs) {
+      var jobs = [];
+      var cur = startMs;
+      var step = 365 * 86400000;
+      while (cur < endMs) {
+        var nxt = Math.min(cur + step, endMs);
+        jobs.push(fetchAwattarWindow(cur, nxt));
+        cur = nxt;
+      }
+      return Promise.all(jobs).then(mergePts);
+    }
+
+    function fetchAwattarWindow(startMs, endMs) {
+      var url = "https://api.awattar.at/v1/marketdata?start=" + Math.floor(startMs) + "&end=" + Math.floor(endMs);
       return fetch(url).then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       }).then(function (j) {
-        var pts = [];
-        if (!j || !j.unix_seconds) return pts;
-        for (var i = 0; i < j.unix_seconds.length; i++) {
-          var v = j.price[i];
-          if (v === null || v === undefined || isNaN(v)) continue;
-          pts.push([j.unix_seconds[i] * 1000, v]);
-        }
-        return pts;
+        return (j.data || []).map(function (d) { return [d.start_timestamp, d.marketprice]; });
       });
     }
 
@@ -842,6 +837,13 @@
           "Tief " + nfmt(ct(tS.min), 2) + " · Hoch " + nfmt(ct(tS.max), 2) + " ct · " + nfmt(tS.base, 1) + " EUR/MWh");
       }
       html += tile("Handlingfee", nfmt(hf, 2), "ct/kWh", "laut Antrag · extra zum EPEX · ohne HKN");
+      if (!show && !tS) {
+        var lastKey = st.raw.length ? localParts(st.raw[st.raw.length - 1][0]).key : null;
+        html = tile("Heute " + fmtYmdDe(heute), "–", "ct/kWh", "noch keine Stundenwerte") +
+          tile("Morgen " + fmtYmdDe(morgen) + " · Liefertag", "–", "ct/kWh",
+            lastKey ? ("Daten enden am " + fmtYmdDe(lastKey) + " — nicht Heute/Morgen") : "keine Börsendaten") +
+          tile("Handlingfee", nfmt(hf, 2), "ct/kWh", "laut Antrag · extra zum EPEX · ohne HKN");
+      }
       el.innerHTML = html;
     }
 
