@@ -205,7 +205,7 @@
     <div class="card" id="lieferCard">
       <div class="chart-head">
         <h2 class="chart-title">Zum Laden — Heute &amp; Morgen</h2>
-        <span class="chart-note">EPEX AT in ct/kWh · Handlingfee extra · ohne HKN</span>
+        <span class="chart-note">EPEX AT in ct/kWh · Handlingfee in ct/kW/h · ohne HKN</span>
       </div>
       <div class="tiles liefer-tiles" id="lieferTiles"></div>
     </div>
@@ -279,7 +279,7 @@
         <div class="field">
           <label for="inHF">Handlingfee</label>
           <input type="number" id="inHF" value="1.5" step="0.01" min="0" inputmode="decimal">
-          <span class="hint">ct/kWh — Handlingfee laut Antrag Strom KMU Spot</span>
+          <span class="hint">ct/kW/h — Handlingfee laut Antrag Strom KMU Spot</span>
         </div>
         <div class="field">
           <label for="inHKN">Stromqualität HKN</label>
@@ -362,8 +362,8 @@
       <div class="calc">
         <div class="field">
           <label for="gHF">Handlingfee</label>
-          <input type="number" id="gHF" value="15" step="0.5" min="0" inputmode="decimal">
-          <span class="hint">EUR/MWh — laut Energieliefervertrag</span>
+          <input type="number" id="gHF" value="1.5" step="0.01" min="0" inputmode="decimal">
+          <span class="hint">ct/kW/h — Handlingfee laut Antrag Erdgas KMU Spot</span>
         </div>
         <div class="field">
           <label for="gCO2">CO₂-Bepreisung (NEHG)</label>
@@ -836,13 +836,13 @@
         html += tile("Heute " + fmtYmdDe(heute) + " · EPEX AT", nfmt(ct(tS.base), 2), "ct/kWh",
           "Tief " + nfmt(ct(tS.min), 2) + " · Hoch " + nfmt(ct(tS.max), 2) + " ct · " + nfmt(tS.base, 1) + " EUR/MWh");
       }
-      html += tile("Handlingfee", nfmt(hf, 2), "ct/kWh", "laut Antrag · extra zum EPEX · ohne HKN");
+      html += tile("Handlingfee", nfmt(hf, 2), "ct/kW/h", "laut Antrag · extra zum EPEX · ohne HKN");
       if (!show && !tS) {
         var lastKey = st.raw.length ? localParts(st.raw[st.raw.length - 1][0]).key : null;
         html = tile("Heute " + fmtYmdDe(heute), "–", "ct/kWh", "noch keine Stundenwerte") +
           tile("Morgen " + fmtYmdDe(morgen) + " · Liefertag", "–", "ct/kWh",
             lastKey ? ("Daten enden am " + fmtYmdDe(lastKey) + " — nicht Heute/Morgen") : "keine Börsendaten") +
-          tile("Handlingfee", nfmt(hf, 2), "ct/kWh", "laut Antrag · extra zum EPEX · ohne HKN");
+          tile("Handlingfee", nfmt(hf, 2), "ct/kW/h", "laut Antrag · extra zum EPEX · ohne HKN");
       }
       el.innerHTML = html;
     }
@@ -901,7 +901,7 @@
 
       document.getElementById("calcOut").innerHTML =
         '<div class="result-row"><span>Spotpreis lastgewichtet — <strong style="color:var(--text-primary)">' + p.name + '</strong></span><span>' + nfmt(spotCt, 3) + ' ct/kWh</span></div>' +
-        '<div class="result-row"><span>+ Handlingfee</span><span>' + nfmt(hfCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row"><span>+ Handlingfee</span><span>' + nfmt(hfCt, 3) + ' ct/kW/h</span></div>' +
         '<div class="result-row" style="color:var(--text-primary)"><span><strong>= Arbeitspreis (Formel P<sub>n</sub>)</strong></span><span><strong>' + nfmt(ap, 3) + ' ct/kWh</strong></span></div>' +
         '<div class="result-row"><span>+ Stromqualität HKN</span><span>' + nfmt(hkn, 3) + ' ct/kWh</span></div>' +
         '<div class="result-row"><span>+ Servicepauschale umgelegt (' + nfmt(kwhM, 0) + ' kWh/Monat)</span><span>' + nfmt(svcCt, 3) + ' ct/kWh</span></div>' +
@@ -1112,7 +1112,7 @@
       var svc = parseFloat(document.getElementById("gService").value) || 0;
       var use = parseFloat(document.getElementById("gUse").value) || 0;
 
-      var spotCt = last.ceghix / 10, hfCt = hf / 10;
+      var spotCt = last.ceghix / 10, hfCt = hf;
       var ap = spotCt + hfCt, energie = ap + co2;
       var kwhM = use / 12, svcCt = kwhM > 0 ? (svc / kwhM) * 100 : 0;
       var ges = energie + svcCt, monat = (energie / 100) * kwhM + svc;
@@ -1121,7 +1121,7 @@
 
       document.getElementById("gCalcOut").innerHTML =
         '<div class="result-row"><span>CEGHIX Spot — ' + per + ' ' + last.label + '</span><span>' + nfmt(spotCt, 3) + ' ct/kWh</span></div>' +
-        '<div class="result-row"><span>+ Handlingfee</span><span>' + nfmt(hfCt, 3) + ' ct/kWh</span></div>' +
+        '<div class="result-row"><span>+ Handlingfee</span><span>' + nfmt(hfCt, 3) + ' ct/kW/h</span></div>' +
         '<div class="result-row" style="color:var(--text-primary)"><span><strong>= Arbeitspreis (Formel P<sub>n</sub>)</strong></span><span><strong>' + nfmt(ap, 3) + ' ct/kWh</strong></span></div>' +
         '<div class="result-row"><span>+ CO₂-Bepreisung (NEHG)</span><span>' + nfmt(co2, 3) + ' ct/kWh</span></div>' +
         '<div class="result-row"><span>+ Servicepauschale umgelegt (' + nfmt(kwhM, 0) + ' kWh/Monat)</span><span>' + nfmt(svcCt, 3) + ' ct/kWh</span></div>' +
