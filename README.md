@@ -18,7 +18,7 @@ der Energie Klagenfurt GmbH. Ab Vertrag Version 1 | 2026 indexiert Strom auf den
 - Einheit umschaltbar **EUR/MWh ↔ ct/kWh**
 - **Endkundenpreis-Rechner** je Energieträger: Handlingfee, HKN bzw. CO₂-Bepreisung,
   Servicepauschale und Jahresverbrauch → Arbeitspreis nach Formel und Energiekosten gesamt
-- Hover-Tooltip mit Crosshair, Datentabelle, Dark Mode, mobiltauglich
+- **Heute & Morgen:** Kacheln plus **Stundenpreise des Liefertags** (Balkendiagramm + Tabelle Uhrzeit → ct/kWh), gleiche Infos wie in der WhatsApp (günstigste Fenster, Tief/Hoch/Schnitt). Handlingfee aus dem Rechner.
 - Eine einzige HTML-Datei, kein Build, keine Abhängigkeiten
 
 ## Lastprofile

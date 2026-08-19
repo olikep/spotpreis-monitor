@@ -163,6 +163,11 @@
   table.data td:first-child { color: var(--text-primary); }
   table.data th:not(:first-child), table.data td:not(:first-child) { text-align: right; }
   .table-scroll { max-height: 380px; overflow-y: auto; margin-top: 12px; }
+  .cheap-line { font-size: 13px; color: var(--text-secondary); margin: 10px 0 8px; line-height: 1.55; }
+  .cheap-line strong { color: var(--text-primary); font-weight: 620; }
+  table.data tr.lo td { color: var(--series-3); }
+  table.data tr.hi td { color: var(--series-2); }
+  table.data tr.lo td:first-child, table.data tr.hi td:first-child { font-weight: 620; }
 
   details.disc { margin-top: 16px; }
   details.disc > summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); font-weight: 560; padding: 4px 0; }
@@ -188,7 +193,7 @@
       <h1>Spotpreis-Monitor</h1>
       <p class="sub">Börsenpreis-Entwicklung als Tages-, Wochen- und Monatsmittel — Referenzindizes für Spotpreis-Tarife
         (<em>Strom KMU Spot</em> und <em>Erdgas KMU Spot</em>, Energie Klagenfurt GmbH).
-        Oben: <strong>Heute</strong> und <strong>Morgen (Liefertag)</strong> mit Datum — nicht „letzter Tag“ im Chart.</p>
+        Oben: <strong>Heute</strong> und <strong>Morgen (Liefertag)</strong> mit Stundenpreisen wie in WhatsApp.</p>
     </div>
     <button class="theme-btn" id="themeBtn" type="button">Dunkel / Hell</button>
   </header>
@@ -211,6 +216,20 @@
         <span class="chart-note">EPEX AT in ct/kWh · Handlingfee in ct/kW/h · ohne HKN</span>
       </div>
       <div class="tiles liefer-tiles" id="lieferTiles"></div>
+      <div id="lieferDay" hidden>
+        <div class="chart-head" style="margin-top:18px">
+          <h2 class="chart-title" id="lieferDayTitle">Morgen — Stundenpreise</h2>
+          <span class="chart-note" id="lieferDayNote"></span>
+        </div>
+        <p class="cheap-line" id="lieferCheap"></p>
+        <div class="plot-holder" id="lieferPlotHolder">
+          <svg class="plot" id="lieferPlot" role="img" aria-label="Stundenpreise Liefertag"></svg>
+          <div class="tooltip" id="lieferTooltip" role="status"></div>
+        </div>
+        <div class="table-scroll" style="max-height:440px">
+          <table class="data" id="lieferTable"></table>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -489,7 +508,11 @@
     var p = partsFmt.formatToParts(new Date(ms)), o = {};
     for (var i = 0; i < p.length; i++) o[p[i].type] = p[i].value;
     var hh = o.hour === "24" ? 0 : parseInt(o.hour, 10);
-    return { y: +o.year, m: +o.month, d: +o.day, h: hh, wd: WD[o.weekday], key: o.year + "-" + o.month + "-" + o.day };
+    return {
+      y: +o.year, m: +o.month, d: +o.day, h: hh,
+      min: parseInt(o.minute, 10) || 0,
+      wd: WD[o.weekday], key: o.year + "-" + o.month + "-" + o.day
+    };
   }
   function isoWeekKey(y, m, d) {
     var dt = new Date(Date.UTC(y, m - 1, d));
@@ -525,7 +548,7 @@
   function drawChart(opts) {
     // opts: svgEl, tooltipEl, holderEl, series[], fields[{key,color,label}], fmt(v), unitLabel
     var s = opts.series, svg = opts.svgEl;
-    var W = 900, H = 340, ml = 56, mr = 16, mt = 14, mb = 34;
+    var W = 900, H = opts.height || 340, ml = 56, mr = 16, mt = 14, mb = 34;
     var iw = W - ml - mr, ih = H - mt - mb;
 
     var vals = [];
@@ -555,21 +578,38 @@
       g += '<text class="axis-text" x="' + X(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="' + (isLast && s.length > 1 ? "end" : "middle") + '">' + d.label + '</text>';
     });
 
-    opts.fields.forEach(function (f) {
-      var dd = "", started = false;
+    if (opts.bars) {
+      var f0 = opts.fields[0];
+      var slot = iw / Math.max(1, s.length);
+      var barW = Math.max(1.4, slot * 0.78);
+      var yBase = (y0 < 0 && y1 > 0) ? Y(0) : (mt + ih);
       s.forEach(function (p, i) {
-        var v = p[f.key];
-        if (v === null || v === undefined) { started = false; return; }
-        dd += (started ? " L" : " M") + X(i).toFixed(1) + " " + Y(v).toFixed(1);
-        started = true;
+        var v = p[f0.key];
+        if (v === null || v === undefined) return;
+        var yV = Y(v);
+        var top = Math.min(yBase, yV);
+        var bh = Math.max(1.5, Math.abs(yBase - yV));
+        var col = p.tone === "cheap" ? "var(--series-3)" : (p.tone === "dear" ? "var(--series-2)" : f0.color);
+        g += '<rect x="' + (X(i) - barW / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + barW.toFixed(1) +
+             '" height="' + bh.toFixed(1) + '" fill="' + col + '" rx="1.2"/>';
       });
-      g += '<path d="' + dd.trim() + '" fill="none" stroke="' + f.color + '" stroke-width="' + (f.emph ? 2.6 : 2) + '" stroke-linejoin="round" stroke-linecap="round"/>';
-    });
-    opts.fields.forEach(function (f) {
-      var v = s[lastI][f.key];
-      if (v === null || v === undefined) return;
-      g += '<circle cx="' + X(lastI).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="4.5" fill="' + f.color + '" stroke="var(--surface-1)" stroke-width="2"/>';
-    });
+    } else {
+      opts.fields.forEach(function (f) {
+        var dd = "", started = false;
+        s.forEach(function (p, i) {
+          var v = p[f.key];
+          if (v === null || v === undefined) { started = false; return; }
+          dd += (started ? " L" : " M") + X(i).toFixed(1) + " " + Y(v).toFixed(1);
+          started = true;
+        });
+        g += '<path d="' + dd.trim() + '" fill="none" stroke="' + f.color + '" stroke-width="' + (f.emph ? 2.6 : 2) + '" stroke-linejoin="round" stroke-linecap="round"/>';
+      });
+      opts.fields.forEach(function (f) {
+        var v = s[lastI][f.key];
+        if (v === null || v === undefined) return;
+        g += '<circle cx="' + X(lastI).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="4.5" fill="' + f.color + '" stroke="var(--surface-1)" stroke-width="2"/>';
+      });
+    }
 
     g += '<g id="hoverG" style="display:none"><line class="crosshair" y1="' + mt + '" y2="' + (mt + ih) + '"/>';
     opts.fields.forEach(function (f, k) {
@@ -824,6 +864,27 @@
 
     function ct(v) { return v / 10; }
 
+    function hhmmOf(p) {
+      return String(p.h).padStart(2, "0") + ":" + String(p.min || 0).padStart(2, "0");
+    }
+
+    function weekdayDe(key) {
+      var names = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+      var p = String(key).split("-").map(Number);
+      return names[new Date(p[0], p[1] - 1, p[2]).getDay()];
+    }
+
+    function daySlots(key) {
+      if (!st.raw || !key) return [];
+      var out = [];
+      for (var i = 0; i < st.raw.length; i++) {
+        var p = localParts(st.raw[i][0]);
+        if (p.key !== key) continue;
+        out.push({ ms: st.raw[i][0], h: p.h, min: p.min, eur: st.raw[i][1], ct: st.raw[i][1] / 10 });
+      }
+      return out;
+    }
+
     function renderLiefer() {
       var el = document.getElementById("lieferTiles");
       if (!el || !st.raw) return;
@@ -831,25 +892,25 @@
       var morgen = addYmd(heute, 1);
       var tS = dayStats(heute);
       var mS = dayStats(morgen);
-      var proxy = !mS || mS.n < 90;
-      var show = proxy ? tS : mS;
+      var proxy = !mS || mS.n < 20;
       var hf = parseFloat(document.getElementById("inHF").value);
       if (isNaN(hf)) hf = 0;
       var html = "";
-      if (show) {
-        var tag = proxy ? heute : morgen;
-        var metaM = fmtYmdDe(tag)
-          + " · Tief " + nfmt(ct(show.min), 2) + " · Hoch " + nfmt(ct(show.max), 2) + " ct"
-          + " · " + nfmt(show.base, 1) + " EUR/MWh";
-        if (proxy) metaM += " · Auktion ausstehend, Heute als Näherung";
-        html += tile("Morgen " + fmtYmdDe(tag) + " · Liefertag · EPEX AT", nfmt(ct(show.base), 2), "ct/kWh", metaM, null, true, proxy ? "proxy" : "");
+      if (mS) {
+        html += tile("Morgen " + fmtYmdDe(morgen) + " · Liefertag · EPEX AT", nfmt(ct(mS.base), 2), "ct/kWh",
+          fmtYmdDe(morgen) + " · Tief " + nfmt(ct(mS.min), 2) + " · Hoch " + nfmt(ct(mS.max), 2) + " ct · " + nfmt(mS.base, 1) + " EUR/MWh",
+          null, true, "");
+      } else if (tS) {
+        html += tile("Morgen " + fmtYmdDe(morgen) + " · Auktion ausstehend", "–", "ct/kWh",
+          "Day-Ahead oft erst nach ~13 Uhr. Unten: Stunden von Heute " + fmtYmdDe(heute) + " als Näherung.",
+          null, true, "proxy");
       }
       if (tS) {
         html += tile("Heute " + fmtYmdDe(heute) + " · EPEX AT", nfmt(ct(tS.base), 2), "ct/kWh",
           "Tief " + nfmt(ct(tS.min), 2) + " · Hoch " + nfmt(ct(tS.max), 2) + " ct · " + nfmt(tS.base, 1) + " EUR/MWh");
       }
       html += tile("Handlingfee", nfmt(hf, 2), "ct/kW/h", "laut Antrag · extra zum EPEX · ohne HKN");
-      if (!show && !tS) {
+      if (!mS && !tS) {
         var lastKey = st.raw.length ? localParts(st.raw[st.raw.length - 1][0]).key : null;
         html = tile("Heute " + fmtYmdDe(heute), "–", "ct/kWh", "noch keine Stundenwerte") +
           tile("Morgen " + fmtYmdDe(morgen) + " · Liefertag", "–", "ct/kWh",
@@ -857,6 +918,66 @@
           tile("Handlingfee", nfmt(hf, 2), "ct/kW/h", "laut Antrag · extra zum EPEX · ohne HKN");
       }
       el.innerHTML = html;
+      renderLieferDay(heute, morgen, mS, tS, proxy, hf);
+    }
+
+    function renderLieferDay(heute, morgen, mS, tS, proxy, hf) {
+      var box = document.getElementById("lieferDay");
+      if (!box) return;
+      var tag = (!proxy && mS) ? morgen : heute;
+      var slots = daySlots(tag);
+      if (!slots.length) { box.hidden = true; return; }
+      box.hidden = false;
+      var isMorgen = tag === morgen;
+      document.getElementById("lieferDayTitle").textContent =
+        (isMorgen ? "Morgen" : "Heute") + " · " + weekdayDe(tag) + ", " + fmtYmdDe(tag) + " — Stundenpreise";
+      document.getElementById("lieferDayNote").textContent = isMorgen
+        ? slots.length + " Intervalle · wie WhatsApp (EPEX AT + Handlingfee)"
+        : "Morgen-Auktion noch nicht da · " + slots.length + " Intervalle von Heute";
+
+      var sorted = slots.slice().sort(function (a, b) { return a.ct - b.ct; });
+      var cheap = sorted.slice(0, 3);
+      var dear = sorted[sorted.length - 1];
+      var cheapSet = {};
+      cheap.forEach(function (p) { cheapSet[hhmmOf(p)] = 1; });
+      var cheapLine = cheap.map(function (p) { return hhmmOf(p) + " " + nfmt(p.ct + hf, 2) + " ct"; }).join(" · ");
+      var avg = slots.reduce(function (s, p) { return s + p.ct; }, 0) / slots.length;
+      document.getElementById("lieferCheap").innerHTML =
+        "<strong>Günstigste Fenster" + (hf ? " inkl. " + nfmt(hf, 2) + " ct HF" : "") + ":</strong> " + cheapLine +
+        "<br>Tagestief " + nfmt(sorted[0].ct, 2) + " · Hoch " + nfmt(dear.ct, 2) + " · Schnitt " + nfmt(avg, 2) + " ct/kWh Börse" +
+        (hf ? " · mit HF " + nfmt(avg + hf, 2) + " ct/kWh" : "") +
+        " · ohne Netz/USt";
+
+      var series = slots.map(function (p) {
+        var t = hhmmOf(p);
+        var tone = cheapSet[t] ? "cheap" : (t === hhmmOf(dear) ? "dear" : "");
+        var showLbl = !p.min && p.h % 3 === 0;
+        return {
+          key: t, label: showLbl ? String(p.h).padStart(2, "0") : "",
+          n: 1, base: p.ct, tone: tone
+        };
+      });
+      drawChart({
+        svgEl: document.getElementById("lieferPlot"),
+        tooltipEl: document.getElementById("lieferTooltip"),
+        holderEl: document.getElementById("lieferPlotHolder"),
+        series: series,
+        fields: [{ key: "base", color: "var(--series-1)", label: "EPEX AT" }],
+        fmt: function (v) { return nfmt(v, 2); },
+        fmtAxis: function (v) { return nfmt(v, 1); },
+        unitLabel: "ct/kWh netto",
+        height: 220,
+        bars: true
+      });
+
+      var h = "<thead><tr><th>Uhrzeit</th><th>Börse ct/kWh</th><th>+ Handlingfee</th><th>EUR/MWh</th></tr></thead><tbody>";
+      slots.forEach(function (p) {
+        var t = hhmmOf(p);
+        var cls = cheapSet[t] ? "lo" : (t === hhmmOf(dear) ? "hi" : "");
+        h += "<tr class=\"" + cls + "\"><td>" + t + "</td><td>" + nfmt(p.ct, 2) + "</td><td>" +
+             nfmt(p.ct + hf, 2) + "</td><td>" + nfmt(p.eur, 2) + "</td></tr>";
+      });
+      document.getElementById("lieferTable").innerHTML = h + "</tbody>";
     }
 
     function seriesDayLabel(key) {
